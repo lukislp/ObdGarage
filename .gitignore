@@ -1,0 +1,16 @@
+## .NET build output
+bin/
+obj/
+
+## Laufzeitdaten (JSON-Persistenz, pro Installation) — siehe CLAUDE.md "Bekannte Eigenheiten"
+src/CarApp.Web/data/
+src/CarApp.Server/data/
+
+## IDE
+.vs/
+.vscode/
+*.user
+
+## OS
+Thumbs.db
+.DS_Store

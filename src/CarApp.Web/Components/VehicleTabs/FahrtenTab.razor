@@ -1,0 +1,90 @@
+@inject IRepository<Trip> Trips
+
+<div class="card">
+    <div class="card-head">
+        <h3>Fahrtenbuch</h3>
+        @if (_trips.Count > 0)
+        {
+            <a class="btn" href="/api/vehicles/@Vehicle.Id/trips.csv">CSV-Export</a>
+        }
+    </div>
+
+    @if (_savedMessage is not null)
+    {
+        <div class="alert alert-success">@_savedMessage</div>
+    }
+
+    @if (_trips.Count == 0)
+    {
+        <p class="muted">Noch keine Fahrten aufgezeichnet. Fahrten starten automatisch, sobald das verbundene Fahrzeug losfährt.</p>
+    }
+    else
+    {
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Start</th>
+                        <th>Dauer</th>
+                        <th>Distanz</th>
+                        <th>Kategorie &amp; Notiz</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var trip in _trips)
+                    {
+                        <tr>
+                            <td>@trip.StartedAt.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</td>
+                            <td>
+                                @if (trip.EndedAt is { } end)
+                                {
+                                    @Fmt.Duration(end - trip.StartedAt)
+                                }
+                                else
+                                {
+                                    <span class="badge badge-green">läuft</span>
+                                }
+                            </td>
+                            <td>@trip.DistanceKm.ToString("N2") km</td>
+                            <td>
+                                <div class="inline-form">
+                                    <select @bind="trip.Category">
+                                        <option value="@TripCategory.Private">Privat</option>
+                                        <option value="@TripCategory.Business">Geschäftlich</option>
+                                        <option value="@TripCategory.Commute">Arbeitsweg</option>
+                                    </select>
+                                    <input @bind="trip.Note" placeholder="Notiz" maxlength="120" />
+                                    <button class="btn btn-small" type="button" @onclick="() => UpdateTrip(trip)">Speichern</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="muted small">
+            @_trips.Count Fahrten &middot; gesamt @_trips.Sum(t => t.DistanceKm).ToString("N1") km
+        </p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public required CarApp.Core.Vehicle Vehicle { get; set; }
+
+    private List<Trip> _trips = [];
+    private string? _savedMessage;
+
+    protected override async Task OnParametersSetAsync() =>
+        _trips = (await Trips.GetAllAsync())
+            .Where(t => t.VehicleId == Vehicle.Id)
+            .OrderByDescending(t => t.StartedAt)
+            .ToList();
+
+    private async Task UpdateTrip(Trip trip)
+    {
+        trip.Note = string.IsNullOrWhiteSpace(trip.Note) ? null : trip.Note.Trim();
+        trip.Touch();
+        await Trips.UpsertAsync(trip);
+        _savedMessage = "Fahrt gespeichert.";
+    }
+}

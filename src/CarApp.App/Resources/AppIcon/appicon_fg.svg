@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Platzhalter-Vordergrund: stilisierte Auto-Silhouette (nur einfache Formen). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="456" height="456" viewBox="0 0 456 456">
+  <g fill="#FFFFFF">
+    <rect x="88" y="220" width="280" height="70" rx="24" />
+    <path d="M136 224 L168 164 Q174 152 188 152 L268 152 Q282 152 288 164 L320 224 Z" />
+    <circle cx="156" cy="300" r="34" />
+    <circle cx="300" cy="300" r="34" />
+  </g>
+  <circle cx="156" cy="300" r="16" fill="#1B2A4A" />
+  <circle cx="300" cy="300" r="16" fill="#1B2A4A" />
+</svg>

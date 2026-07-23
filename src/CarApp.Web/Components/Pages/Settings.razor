@@ -1,0 +1,153 @@
+@page "/settings"
+@inject AppState State
+@inject SyncManager Sync
+
+<PageTitle>Einstellungen &ndash; CarApp</PageTitle>
+
+<div class="page-head">
+    <h1>Einstellungen</h1>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error</div>
+}
+@if (_message is not null)
+{
+    <div class="alert alert-success">@_message</div>
+}
+
+<div class="card">
+    <h3>Status</h3>
+    <p>
+        @if (Sync.IsLoggedIn)
+        {
+            <span class="badge badge-green">angemeldet</span>
+            <span> als <strong>@Sync.Email</strong> &middot; Server: <code>@Sync.ServerUrl</code></span>
+        }
+        else
+        {
+            <span class="badge badge-neutral">nicht angemeldet</span>
+            <span class="muted"> — die App arbeitet offline-first, alle Daten bleiben lokal.</span>
+        }
+    </p>
+    <p class="muted small">
+        Letzter Sync: @(Sync.LastSyncAt?.ToLocalTime().ToString("dd.MM.yyyy HH:mm") ?? "noch nie")
+    </p>
+    @if (Sync.IsLoggedIn)
+    {
+        <button class="btn btn-small" type="button" @onclick="Logout">Abmelden</button>
+    }
+</div>
+
+<div class="card">
+    <h3>Konto &amp; Server</h3>
+    <p class="muted small">
+        Registrieren (mit Einladungscode des Heimservers) oder anmelden — beim ersten Login
+        werden die lokal angelegten Fahrzeuge automatisch deinem Konto zugeordnet.
+    </p>
+    <div class="form-grid">
+        <label>Server-URL
+            <input @bind="_serverUrl" type="url" placeholder="@SyncManager.DefaultServerUrl" />
+        </label>
+        <label>E-Mail
+            <input @bind="_email" type="email" placeholder="du@beispiel.de" />
+        </label>
+        <label>Passwort
+            <input @bind="_password" type="password" placeholder="••••••••" />
+        </label>
+        <label>Einladungscode (nur für Registrierung)
+            <input @bind="_inviteCode" />
+        </label>
+    </div>
+    <div class="form-actions btn-row">
+        <button class="btn btn-primary" type="button" @onclick="Login">Anmelden</button>
+        <button class="btn" type="button" @onclick="Register">Registrieren</button>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Jetzt synchronisieren</h3>
+    <p class="muted small">
+        Push aller lokalen Änderungen, danach Pull der Server-Änderungen (Last-Write-Wins).
+    </p>
+    <button class="btn btn-primary" type="button" @onclick="SyncNow" disabled="@(!Sync.IsLoggedIn)">Sync starten</button>
+    @if (!Sync.IsLoggedIn)
+    {
+        <p class="muted small">Zum Synchronisieren zuerst anmelden.</p>
+    }
+</div>
+
+@code {
+    private string? _error;
+    private string? _message;
+
+    private string? _serverUrl;
+    private string? _email;
+    private string _password = "";
+    private string _inviteCode = "CARAPP-2026";
+
+    protected override void OnInitialized()
+    {
+        _serverUrl = State.SyncServerUrl ?? SyncManager.DefaultServerUrl;
+        _email = State.SyncEmail;
+    }
+
+    private async Task Login()
+    {
+        _error = null;
+        _message = null;
+        var serverUrl = NullIfEmpty(_serverUrl) ?? SyncManager.DefaultServerUrl;
+        var email = NullIfEmpty(_email);
+        if (email is null || _password.Length == 0)
+        {
+            _error = "Bitte E-Mail und Passwort angeben.";
+            return;
+        }
+
+        var result = await Sync.LoginAsync(serverUrl, email, _password);
+        if (result.Success)
+            _message = $"Angemeldet als {email}. Lokale Fahrzeuge wurden dem Konto zugeordnet.";
+        else
+            _error = $"Login fehlgeschlagen: {result.Error}";
+    }
+
+    private async Task Register()
+    {
+        _error = null;
+        _message = null;
+        var serverUrl = NullIfEmpty(_serverUrl) ?? SyncManager.DefaultServerUrl;
+        var email = NullIfEmpty(_email);
+        if (email is null || _password.Length == 0)
+        {
+            _error = "Bitte E-Mail und Passwort angeben.";
+            return;
+        }
+
+        var result = await Sync.RegisterAsync(serverUrl, email, _password, NullIfEmpty(_inviteCode) ?? "");
+        if (result.Success)
+            _message = $"Registrierung erfolgreich — melde dich jetzt als {email} an.";
+        else
+            _error = $"Registrierung fehlgeschlagen: {result.Error}";
+    }
+
+    private async Task SyncNow()
+    {
+        _error = null;
+        _message = null;
+        var result = await Sync.SyncNowAsync();
+        if (result.Success)
+            _message = $"Sync erfolgreich: {result.Pushed} gepusht, {result.Pulled} gepullt.";
+        else
+            _error = $"Sync fehlgeschlagen: {result.Error}";
+    }
+
+    private async Task Logout()
+    {
+        await Sync.LogoutAsync();
+        _message = "Abgemeldet — die App arbeitet lokal weiter.";
+    }
+
+    private static string? NullIfEmpty(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}

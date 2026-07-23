@@ -1,0 +1,106 @@
+@using CarApp.Obd
+@using CarApp.Obd.Transport
+@using Microsoft.Maui.Storage
+
+@*
+    Platzhalter-Startseite der MAUI-App.
+    Die "echten" Seiten (Dashboard, Fahrzeuge, Fahrten, Wartung) liegen aktuell in
+    CarApp.Web/Components und wandern in einem späteren Schritt in eine gemeinsame
+    Razor Class Library (CarApp.UI) — Anleitung: docs/MAUI-SETUP.md.
+    Bis dahin: einfacher Verbindungstest (Simulator + WLAN-Adapter), um die
+    OBD-Schicht auf dem Gerät End-to-End zu prüfen.
+*@
+
+<div class="page">
+    <h1>CarApp</h1>
+    <p class="muted">MAUI-Blazor-Hülle — Verbindungstest</p>
+
+    <section>
+        <h2>Simulator</h2>
+        <p>Testet die komplette OBD-Kette (Elm327Client, PID-Parsing) ohne Fahrzeug.</p>
+        <button disabled="@_busy" @onclick="TestSimulatorAsync">Simulator testen</button>
+    </section>
+
+    <section>
+        <h2>WLAN-Adapter</h2>
+        <p>Typischer Endpunkt eines WLAN-OBD-Adapters: 192.168.0.10, Port 35000.</p>
+        <label>Host <input @bind="_host" /></label>
+        <label>Port <input @bind="_portText" inputmode="numeric" /></label>
+        <button disabled="@_busy" @onclick="TestWifiAsync">WLAN-Adapter testen</button>
+    </section>
+
+    @if (_busy)
+    {
+        <p><em>Verbinde…</em></p>
+    }
+    @if (_result is not null)
+    {
+        <p class="@(_success ? "ok" : "err")">@_result</p>
+    }
+
+    <section>
+        <h2>Info</h2>
+        <p class="muted">Datenverzeichnis: @FileSystem.AppDataDirectory</p>
+        <p class="muted">
+            Bluetooth Classic (Android) ist als Transport vorhanden
+            (Platforms/Android/BluetoothClassicTransport.cs) und wird mit der
+            Adapter-Verwaltung verdrahtet, sobald die gemeinsame UI steht.
+            BLE folgt in Phase 7 (Services/BleTransport.cs).
+        </p>
+    </section>
+</div>
+
+@code {
+    private string _host = "192.168.0.10";
+    private string _portText = "35000";
+    private bool _busy;
+    private bool _success;
+    private string? _result;
+
+    private async Task TestSimulatorAsync()
+    {
+        var car = new SimulatedCar();
+        await RunTestAsync(new SimulatedCarTransport(car), "Simulator");
+    }
+
+    private async Task TestWifiAsync()
+    {
+        if (!int.TryParse(_portText, out var port) || port is < 1 or > 65535)
+        {
+            _success = false;
+            _result = "Ungültiger Port.";
+            return;
+        }
+        await RunTestAsync(new WifiTcpTransport(_host.Trim(), port), $"WLAN {_host.Trim()}:{port}");
+    }
+
+    /// <summary>Initialisiert den Adapter, liest Spannung + unterstützte PIDs und räumt sauber auf.</summary>
+    private async Task RunTestAsync(IObdTransport transport, string label)
+    {
+        _busy = true;
+        _result = null;
+        StateHasChanged();
+
+        var client = new Elm327Client(transport);
+        try
+        {
+            await client.InitializeAsync();
+            var voltage = await client.ReadAdapterVoltageAsync();
+            var pids = await client.GetSupportedPidsAsync();
+
+            _success = true;
+            _result = $"{label}: verbunden — {pids.Count} unterstützte PIDs" +
+                      (voltage is { } v ? $", Adapterspannung {v:0.0} V" : "");
+        }
+        catch (Exception ex)
+        {
+            _success = false;
+            _result = $"{label}: Fehler — {ex.Message}";
+        }
+        finally
+        {
+            await client.DisposeAsync();
+            _busy = false;
+        }
+    }
+}

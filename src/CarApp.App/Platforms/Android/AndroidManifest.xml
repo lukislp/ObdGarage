@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
+
+	<application android:allowBackup="true"
+	             android:icon="@mipmap/appicon"
+	             android:roundIcon="@mipmap/appicon_round"
+	             android:supportsRtl="true"></application>
+
+	<!-- WLAN-Adapter (TcpClient) + Sync mit dem Heim-Backend. -->
+	<uses-permission android:name="android.permission.INTERNET" />
+	<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+	<!-- Bluetooth Classic (SPP) für die üblichen ELM327-Adapter.
+	     Ab API 31: BLUETOOTH_CONNECT/BLUETOOTH_SCAN (Laufzeit-Berechtigungen!);
+	     neverForLocation, weil wir nicht orten, nur verbinden. -->
+	<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+	<uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+	                 android:usesPermissionFlags="neverForLocation"
+	                 tools:targetApi="s" />
+
+	<!-- Alt-APIs (bis 30): klassische BT-Permissions + Standort für BT-Scans. -->
+	<uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+	<uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+	<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+
+	<!-- Bluetooth ist optional — App bleibt auch ohne (WLAN-Adapter) installierbar. -->
+	<uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+
+</manifest>

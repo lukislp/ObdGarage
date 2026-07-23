@@ -1,0 +1,169 @@
+@page "/vehicles/new"
+@page "/vehicles/{Id:guid}/edit"
+@inject IRepository<CarApp.Core.Vehicle> Vehicles
+@inject OdometerTracker Odometer
+@inject AppState State
+@inject PhotoStorage Photos
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>@(_isNew ? "Fahrzeug hinzufügen" : "Fahrzeug bearbeiten") &ndash; CarApp</PageTitle>
+
+<div class="page-head">
+    <h1>@(_isNew ? "Fahrzeug hinzufügen" : $"{_vehicle?.Name} bearbeiten")</h1>
+    <a class="btn" href="@(_isNew ? "/" : $"/vehicles/{Id}")">Abbrechen</a>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error</div>
+}
+
+@if (!_isNew && _vehicle is null)
+{
+    <div class="card empty-state"><p>Fahrzeug nicht gefunden.</p><a class="btn" href="/">Zur Garage</a></div>
+}
+else
+{
+    <div class="card form-card">
+        <div class="form-grid">
+            <label>Name *
+                <input @bind="_name" maxlength="60" placeholder="z.B. Familienkombi" />
+            </label>
+            <label>Kennzeichen
+                <input @bind="_licensePlate" maxlength="12" placeholder="z.B. M-AB 1234" />
+            </label>
+            <label>Marke
+                <input @bind="_make" maxlength="40" placeholder="z.B. VW" />
+            </label>
+            <label>Modell
+                <input @bind="_model" maxlength="40" placeholder="z.B. Passat" />
+            </label>
+            <label>Baujahr
+                <input @bind="_modelYear" type="number" min="1950" max="2100" />
+            </label>
+            <label>VIN (Fahrgestellnummer)
+                <input @bind="_vin" maxlength="17" placeholder="wird beim Verbinden automatisch gelesen" />
+            </label>
+            <label>Nächster TÜV/HU
+                <input value="@_inspectionDue" @onchange="e => _inspectionDue = e.Value?.ToString()" type="date" />
+            </label>
+            @if (_isNew || _vehicle?.LastKnownOdometerKm is null)
+            {
+                <label>Kilometerstand (initial)
+                    <input @bind="_odometerKm" type="number" step="0.1" min="0" placeholder="z.B. 123456" />
+                </label>
+            }
+            <label class="form-span">Foto (JPG/PNG/WebP)
+                <InputFile OnChange="OnPhotoSelected" accept=".jpg,.jpeg,.png,.webp" />
+            </label>
+        </div>
+        <div class="form-actions">
+            <button class="btn btn-primary" type="button" @onclick="HandleSave">@(_isNew ? "Fahrzeug anlegen" : "Speichern")</button>
+        </div>
+    </div>
+
+    @if (!_isNew)
+    {
+        <div class="danger-zone">
+            <button class="btn btn-danger" type="button" @onclick="HandleDelete">Fahrzeug löschen</button>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private CarApp.Core.Vehicle? _vehicle;
+    private bool _isNew => Id is null;
+    private string? _error;
+
+    private string _name = "";
+    private string? _licensePlate;
+    private string? _make;
+    private string? _model;
+    private string? _modelYear;
+    private string? _vin;
+    private string? _inspectionDue;
+    private string? _odometerKm;
+
+    private IBrowserFile? _photo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id is { } id)
+        {
+            _vehicle = await Vehicles.GetAsync(id);
+            if (_vehicle is not null)
+            {
+                _name = _vehicle.Name;
+                _licensePlate = _vehicle.LicensePlate;
+                _make = _vehicle.Make;
+                _model = _vehicle.Model;
+                _modelYear = _vehicle.ModelYear?.ToString();
+                _vin = _vehicle.Vin;
+                _inspectionDue = _vehicle.InspectionDueDate?.ToString("yyyy-MM-dd");
+            }
+        }
+    }
+
+    private void OnPhotoSelected(InputFileChangeEventArgs e) => _photo = e.File;
+
+    private async Task HandleSave()
+    {
+        var name = _name.Trim();
+        if (name.Length == 0)
+        {
+            _error = "Bitte einen Namen angeben.";
+            return;
+        }
+
+        var vehicle = _isNew ? null : await Vehicles.GetAsync(Id!.Value);
+        vehicle ??= new CarApp.Core.Vehicle { Name = "", OwnerUserId = State.CurrentUserId };
+
+        vehicle.Name = name;
+        vehicle.LicensePlate = NullIfEmpty(_licensePlate);
+        vehicle.Make = NullIfEmpty(_make);
+        vehicle.Model = NullIfEmpty(_model);
+        vehicle.ModelYear = Fmt.ParseInt(_modelYear);
+        vehicle.Vin = NullIfEmpty(_vin);
+        vehicle.InspectionDueDate = Fmt.ParseDate(_inspectionDue);
+        vehicle.Touch();
+
+        if (_photo is { } photo)
+        {
+            var ext = Path.GetExtension(photo.Name).ToLowerInvariant();
+            if (ext is ".jpg" or ".jpeg" or ".png" or ".webp")
+            {
+                Directory.CreateDirectory(Photos.Directory);
+                foreach (var old in Directory.EnumerateFiles(Photos.Directory, vehicle.Id.ToString("N") + ".*"))
+                    File.Delete(old);
+                var path = Path.Combine(Photos.Directory, vehicle.Id.ToString("N") + ext);
+                await using var stream = File.Create(path);
+                await photo.OpenReadStream(10 * 1024 * 1024).CopyToAsync(stream);
+                vehicle.PhotoPath = Path.GetFileName(path);
+            }
+        }
+
+        await Vehicles.UpsertAsync(vehicle);
+
+        if (Fmt.ParseDouble(_odometerKm) is { } km && vehicle.LastKnownOdometerKm is null)
+        {
+            try { await Odometer.RecordManualAsync(vehicle, km); }
+            catch (ArgumentException) { /* Initialwert optional — still ignorieren */ }
+        }
+
+        Nav.NavigateTo(_isNew ? "/" : $"/vehicles/{vehicle.Id}");
+    }
+
+    private async Task HandleDelete()
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Fahrzeug wirklich löschen?"))
+            return;
+        await Vehicles.DeleteAsync(Id!.Value);
+        Nav.NavigateTo("/");
+    }
+
+    private static string? NullIfEmpty(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}

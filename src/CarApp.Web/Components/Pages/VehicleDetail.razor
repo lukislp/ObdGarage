@@ -1,0 +1,84 @@
+@page "/vehicles/{Id:guid}"
+@inject IRepository<CarApp.Core.Vehicle> Vehicles
+@inject ConnectionManager Connections
+
+<PageTitle>@(_vehicle?.Name ?? "Fahrzeug") &ndash; CarApp</PageTitle>
+
+@if (_vehicle is null)
+{
+    <div class="card empty-state"><p>Fahrzeug nicht gefunden.</p><a class="btn" href="/">Zur Garage</a></div>
+}
+else
+{
+    var connected = Connections.IsConnected(_vehicle.Id);
+    <div class="page-head vehicle-head">
+        <div>
+            <h1>
+                @_vehicle.Name
+                <span class="conn-dot inline @(connected ? "on" : "off")"
+                      title="@(connected ? "Verbunden" : "Getrennt")"></span>
+            </h1>
+            <div class="muted">
+                @_vehicle.Make @_vehicle.Model
+                @if (_vehicle.LicensePlate is not null)
+                {
+                    <span class="plate">@_vehicle.LicensePlate</span>
+                }
+                &middot; @Fmt.Km(_vehicle.LastKnownOdometerKm)
+                <span class="badge badge-neutral">@Home.SourceLabel(_vehicle.OdometerSource)</span>
+            </div>
+        </div>
+        <a class="btn" href="/vehicles/@_vehicle.Id/edit">Bearbeiten</a>
+    </div>
+
+    <nav class="tabs">
+        @foreach (var (key, label) in TabDefs)
+        {
+            <a class="tab @(ActiveTab == key ? "active" : "")" href="/vehicles/@_vehicle.Id?tab=@key">@label</a>
+        }
+    </nav>
+
+    @switch (ActiveTab)
+    {
+        case "verlauf":
+            <VerlaufTab Vehicle="_vehicle" Pid="@Pid" Range="@Range" From="@From" To="@To" />
+            break;
+        case "fahrten":
+            <FahrtenTab Vehicle="_vehicle" />
+            break;
+        case "wartung":
+            <WartungTab Vehicle="_vehicle" />
+            break;
+        case "kosten":
+            <KostenTab Vehicle="_vehicle" />
+            break;
+        default:
+            <DashboardTab Vehicle="_vehicle" />
+            break;
+    }
+}
+
+@code {
+    private static readonly (string Key, string Label)[] TabDefs =
+    [
+        ("dashboard", "Dashboard"),
+        ("verlauf", "Verlauf"),
+        ("fahrten", "Fahrten"),
+        ("wartung", "Wartung"),
+        ("kosten", "Kosten"),
+    ];
+
+    [Parameter] public Guid Id { get; set; }
+    [SupplyParameterFromQuery(Name = "tab")] public string? Tab { get; set; }
+    [SupplyParameterFromQuery(Name = "pid")] public string? Pid { get; set; }
+    [SupplyParameterFromQuery(Name = "range")] public string? Range { get; set; }
+    [SupplyParameterFromQuery(Name = "from")] public string? From { get; set; }
+    [SupplyParameterFromQuery(Name = "to")] public string? To { get; set; }
+
+    private CarApp.Core.Vehicle? _vehicle;
+
+    private string ActiveTab => TabDefs.Any(t => t.Key == Tab) ? Tab! : "dashboard";
+
+    protected override async Task OnParametersSetAsync() =>
+        _vehicle = await Vehicles.GetAsync(Id);
+}

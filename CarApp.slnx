@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CarApp.Application/CarApp.Application.csproj" />
+    <Project Path="src/CarApp.Core/CarApp.Core.csproj" />
+    <Project Path="src/CarApp.Data/CarApp.Data.csproj" />
+    <Project Path="src/CarApp.Obd/CarApp.Obd.csproj" />
+    <Project Path="src/CarApp.Server/CarApp.Server.csproj" />
+    <Project Path="src/CarApp.Shared/CarApp.Shared.csproj" />
+    <Project Path="src/CarApp.Web/CarApp.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CarApp.Tests/CarApp.Tests.csproj" />
+  </Folder>
+</Solution>
