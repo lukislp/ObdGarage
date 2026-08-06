@@ -3,7 +3,7 @@ using System.Text;
 
 namespace CarApp.Obd.Transport;
 
-/// <summary>Zustand des simulierten Fahrzeugs — von außen steuerbar (Testszenarien, UI-Demo).</summary>
+/// <summary>State of the simulated vehicle — externally controllable (test scenarios, UI demo).</summary>
 public sealed class SimulatedCar
 {
     public string Vin { get; set; } = "WSIMTEST000000001";
@@ -14,15 +14,15 @@ public sealed class SimulatedCar
     public double EngineLoadPct { get; set; } = 18;
     public double VoltageV { get; set; } = 13.8;
     public double OdometerKm { get; set; } = 123_456.7;
-    /// <summary>False simuliert ein älteres Auto ohne Standard-Odometer-PID.</summary>
+    /// <summary>False simulates an older car without the standard odometer PID.</summary>
     public bool SupportsOdometer { get; set; } = true;
 }
 
 /// <summary>
-/// Vollwertige ELM327-Emulation über der Transport-Schnittstelle: beantwortet
-/// AT-Befehle, Mode-01-PIDs (aus dem aktuellen <see cref="SimulatedCar"/>-Zustand),
-/// Supported-PID-Masken und die VIN. Damit lassen sich Client, Polling und
-/// Fahrtenbuch komplett ohne Auto End-to-End testen.
+/// Full ELM327 emulation over the transport interface: answers
+/// AT commands, mode-01 PIDs (from the current <see cref="SimulatedCar"/> state),
+/// supported-PID masks, and the VIN. This allows the client, polling, and
+/// trip logging to be tested fully end-to-end without a car.
 /// </summary>
 public sealed class SimulatedCarTransport(SimulatedCar car) : IObdTransport
 {
@@ -105,7 +105,7 @@ public sealed class SimulatedCarTransport(SimulatedCar car) : IObdTransport
     {
         var supported = SupportedPids();
 
-        // Supported-PID-Masken (0x00, 0x20, 0x40, …)
+        // Supported-PID masks (0x00, 0x20, 0x40, …)
         if (pid % 0x20 == 0 && pid <= 0xC0)
         {
             uint bits = 0;
@@ -115,7 +115,7 @@ public sealed class SimulatedCarTransport(SimulatedCar car) : IObdTransport
                     bits |= 1u << (32 - i);
             }
             if (supported.Any(p => p > pid + 0x20))
-                bits |= 1; // Continue-Bit
+                bits |= 1; // Continue bit
             if (bits == 0)
                 return "NO DATA\r\r>";
             var m = new[] { (byte)(bits >> 24), (byte)(bits >> 16), (byte)(bits >> 8), (byte)bits };
@@ -152,7 +152,7 @@ public sealed class SimulatedCarTransport(SimulatedCar car) : IObdTransport
         var payload = new List<byte> { 0x49, 0x02, 0x01 };
         payload.AddRange(vinBytes);
 
-        // ISO-TP-Multiframe-Darstellung wie von einem echten CAN-Fahrzeug
+        // ISO-TP multi-frame representation as from a real CAN vehicle
         var sb = new StringBuilder();
         sb.Append((payload.Count).ToString("X3")).Append('\r');
         for (int frame = 0; frame * 7 < payload.Count; frame++)

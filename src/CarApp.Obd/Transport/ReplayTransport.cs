@@ -3,8 +3,8 @@ using System.Text;
 namespace CarApp.Obd.Transport;
 
 /// <summary>
-/// Simulierter Transport für Tests und Entwicklung ohne Auto:
-/// beantwortet Befehle aus einem Skript (Befehl → Rohantwort inkl. Prompt '&gt;').
+/// Simulated transport for tests and development without a car:
+/// answers commands from a script (command → raw response including the '&gt;' prompt).
 /// </summary>
 public sealed class ReplayTransport : IObdTransport
 {
@@ -15,13 +15,13 @@ public sealed class ReplayTransport : IObdTransport
 
     public bool IsConnected { get; private set; }
 
-    /// <summary>Alle Befehle, die der Client gesendet hat (für Assertions).</summary>
+    /// <summary>All commands that the client has sent (for assertions).</summary>
     public IReadOnlyList<string> SentCommands => _sentCommands;
 
-    /// <summary>Standardantwort für Befehle ohne Skripteintrag.</summary>
+    /// <summary>Default response for commands without a script entry.</summary>
     public string DefaultResponse { get; set; } = "?\r\r>";
 
-    /// <summary>Registriert eine Antwort. Mehrfachaufrufe stapeln Antworten (FIFO).</summary>
+    /// <summary>Registers a response. Multiple calls stack responses (FIFO).</summary>
     public ReplayTransport OnCommand(string command, string response)
     {
         var key = command.Replace(" ", "").ToUpperInvariant();

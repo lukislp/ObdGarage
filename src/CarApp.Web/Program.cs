@@ -6,16 +6,16 @@ using CarApp.Web;
 using CarApp.Web.Components;
 using CarApp.Web.Services;
 
-// Deutsche Anzeige (Zahlen/Daten); Formulareingaben werden bewusst kulturunabhängig geparst (Fmt).
+// German display (numbers/dates); form inputs are deliberately parsed culture-independently (Fmt).
 var culture = new CultureInfo("de-DE");
 CultureInfo.DefaultThreadCurrentCulture = culture;
 CultureInfo.DefaultThreadCurrentUICulture = culture;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Nötig, damit Framework-Assets (_framework/blazor.web.js) auch ohne "dotnet publish"
-// und außerhalb von ASPNETCORE_ENVIRONMENT=Development ausgeliefert werden (Default-Start
-// per CLAUDE.md läuft ohne Environment-Variable, also im Production-Modus).
+// Needed so framework assets (_framework/blazor.web.js) are served even without "dotnet publish"
+// and outside of ASPNETCORE_ENVIRONMENT=Development (the default start
+// per CLAUDE.md runs without an environment variable, i.e. in Production mode).
 builder.WebHost.UseStaticWebAssets();
 
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
@@ -66,13 +66,13 @@ app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.MapCarAppEndpoints(photosDir);
 
-// SyncManager früh instanziieren, damit ein gespeichertes Token (data/sync-auth.json)
-// sofort geladen wird und AppState.CurrentUserId schon beim ersten Request stimmt.
+// Instantiate SyncManager early so a saved token (data/sync-auth.json)
+// is loaded immediately and AppState.CurrentUserId is already correct on the first request.
 _ = app.Services.GetRequiredService<SyncManager>();
 
 app.Run();
 
-/// <summary>Eine JSON-Datei pro Entität — als IRepository UND ISyncRepository registriert.</summary>
+/// <summary>One JSON file per entity — registered as both IRepository AND ISyncRepository.</summary>
 static void RegisterRepository<T>(IServiceCollection services, string dataDir) where T : SyncEntity
 {
     var repo = new JsonFileRepository<T>(dataDir);

@@ -2,12 +2,12 @@ using CarApp.Core;
 
 namespace CarApp.Application;
 
-/// <summary>Verbrauchs- und Kostenauswertung (Volltankmethode). Reine Rechenlogik.</summary>
+/// <summary>Consumption and cost analysis (full-tank method). Pure calculation logic.</summary>
 public static class FuelStatistics
 {
     /// <summary>
-    /// Durchschnittsverbrauch l/100km über alle Volltank-Intervalle.
-    /// Braucht mindestens zwei Volltank-Einträge mit km-Stand.
+    /// Average consumption l/100km across all full-tank intervals.
+    /// Requires at least two full-tank entries with an odometer reading.
     /// </summary>
     public static double? ConsumptionPer100Km(IReadOnlyList<FuelEntry> entries)
     {
@@ -24,7 +24,7 @@ public static class FuelStatistics
         if (distance <= 0)
             return null;
 
-        // Alle Liter NACH dem ersten Volltank bis einschließlich zum letzten Volltank.
+        // All liters AFTER the first full tank up to and including the last full tank.
         var liters = entries
             .Where(e => e.OdometerKm is { } km && km > firstKm && km <= lastKm)
             .Sum(e => e.Liters);

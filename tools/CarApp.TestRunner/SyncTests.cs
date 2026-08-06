@@ -9,8 +9,8 @@ using Microsoft.AspNetCore.Builder;
 namespace CarApp.TestRunner;
 
 /// <summary>
-/// End-to-End-Tests für Login + Offline-First-Sync: Server in-process (ServerApp.BuildApp),
-/// Clients als SyncService mit eigenem lokalen Datenverzeichnis (jeder Client = "ein Gerät").
+/// End-to-end tests for login + offline-first sync: server in-process (ServerApp.BuildApp),
+/// clients as SyncService with their own local data directory (each client = "one device").
 /// </summary>
 public static class SyncTests
 {
@@ -56,7 +56,7 @@ public static class SyncTests
         var app = ServerApp.BuildApp([], serverDir);
         app.Urls.Add("http://127.0.0.1:0");
         await app.StartAsync();
-        var baseUrl = app.Urls.First(); // echte Adresse nach dem Start (Port wurde vom OS vergeben)
+        var baseUrl = app.Urls.First(); // actual address after startup (port was assigned by the OS)
 
         try
         {
@@ -64,7 +64,7 @@ public static class SyncTests
             var health = await raw.GetAsync("api/v1/health");
             check("Health-Endpoint erreichbar", health.IsSuccessStatusCode);
 
-            // --- Registrierung + Login -----------------------------------------------
+            // --- Registration + login -----------------------------------------------
             var a = NewClient(baseUrl);
             dirs.Add(a.Dir);
             var badInvite = await a.Sync.RegisterAsync("alice@example.com", "geheim123", "FALSCHER-CODE");
@@ -80,7 +80,7 @@ public static class SyncTests
             check("Login liefert Token + UserId",
                 login.Success && !string.IsNullOrEmpty(a.Sync.Token) && a.Sync.UserId != Guid.Empty);
 
-            // --- Auth-Pflicht: ohne/mit falschem Token → 401 ---------------------------
+            // --- Auth requirement: without/with wrong token → 401 ---------------------------
             var noToken = await raw.GetAsync("api/v1/sync/vehicles");
             check("Sync ohne Token → 401", noToken.StatusCode == HttpStatusCode.Unauthorized);
             using var wrongToken = new HttpClient { BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/") };
@@ -88,7 +88,7 @@ public static class SyncTests
             var wrong = await wrongToken.GetAsync("api/v1/sync/vehicles");
             check("Sync mit falschem Token → 401", wrong.StatusCode == HttpStatusCode.Unauthorized);
 
-            // --- Push/Pull-Roundtrip ---------------------------------------------------
+            // --- Push/pull roundtrip ---------------------------------------------------
             var vehicle = new Vehicle { Name = "Golf", OwnerUserId = a.Sync.UserId, LastKnownOdometerKm = 42_000 };
             await a.Vehicles.UpsertAsync(vehicle);
             var trip = new Trip
@@ -107,7 +107,7 @@ public static class SyncTests
                 (await a.Vehicles.GetAllIncludingDeletedAsync()).All(v => v.SyncState == SyncState.Synced) &&
                 (await a.Trips.GetAllIncludingDeletedAsync()).All(t => t.SyncState == SyncState.Synced));
 
-            var a2 = NewClient(baseUrl); // frisches Gerät, gleicher Nutzer
+            var a2 = NewClient(baseUrl); // fresh device, same user
             dirs.Add(a2.Dir);
             await a2.Sync.LoginAsync("alice@example.com", "geheim123");
             var sync2 = await a2.Sync.SyncAsync();
@@ -124,7 +124,7 @@ public static class SyncTests
             check("Gepullte Entitäten sind Synced",
                 a2Vehicles[0].SyncState == SyncState.Synced && a2Trips[0].SyncState == SyncState.Synced);
 
-            // --- Nutzertrennung ----------------------------------------------------------
+            // --- User separation ----------------------------------------------------------
             var b = NewClient(baseUrl);
             dirs.Add(b.Dir);
             await b.Sync.RegisterAsync("bob@example.com", "geheim456", "CARAPP-2026");
@@ -133,7 +133,7 @@ public static class SyncTests
             check("Nutzer B sieht Fahrzeuge von A nicht",
                 bSync.Success && (await b.Vehicles.GetAllAsync()).Count == 0);
 
-            // B versucht, fremde Daten zu pushen (Trip auf A-Fahrzeug + Kapern des A-Fahrzeugs).
+            // B tries to push foreign data (trip on A's vehicle + hijacking A's vehicle).
             var foreignTrip = new Trip { VehicleId = vehicle.Id, DistanceKm = 999 };
             await b.Trips.UpsertAsync(foreignTrip);
             var hijack = new Vehicle
@@ -163,14 +163,14 @@ public static class SyncTests
 
             var vStale = (await a.Vehicles.GetAllAsync()).Single();
             vStale.Name = "Veralteter Stand";
-            vStale.ModifiedAt = DateTimeOffset.UtcNow.AddHours(-1); // bewusst älter als der Server-Stand
+            vStale.ModifiedAt = DateTimeOffset.UtcNow.AddHours(-1); // deliberately older than the server state
             vStale.SyncState = SyncState.Pending;
             await a.Vehicles.UpsertAsync(vStale);
             await a.Sync.SyncAsync();
             check("LWW: ältere Version überschreibt neuere nicht",
                 (await a.Vehicles.GetAllAsync()).Single().Name == "Golf GTI");
 
-            // --- Soft-Delete wird übertragen ----------------------------------------------
+            // --- Soft-delete is transferred ----------------------------------------------
             await a2.Trips.DeleteAsync(trip.Id);
             await a2.Sync.SyncAsync();
             await a.Sync.SyncAsync();
@@ -179,7 +179,7 @@ public static class SyncTests
             check("Gelöschter Trip bleibt als Tombstone erhalten",
                 (await a.Trips.GetAllIncludingDeletedAsync()).Any(t => t.Id == trip.Id && t.IsDeleted));
 
-            // --- Samples: Batch-Push + Query ----------------------------------------------
+            // --- Samples: batch push + query ----------------------------------------------
             var now = DateTimeOffset.UtcNow;
             var batch = Enumerable.Range(0, 5).Select(i => new ObdSample
             {
@@ -210,8 +210,8 @@ public static class SyncTests
                 [new ObdSample { VehicleId = vehicle.Id, PidKey = "rpm", Timestamp = now, Value = 1 }]);
             check("Fremde Samples werden verworfen", bForeignSamples is { Accepted: 0, Rejected: 1 });
 
-            // --- Offline-Robustheit ---------------------------------------------------------
-            var offline = NewClient("http://127.0.0.1:1"); // dort lauscht niemand
+            // --- Offline robustness ---------------------------------------------------------
+            var offline = NewClient("http://127.0.0.1:1"); // nothing is listening there
             dirs.Add(offline.Dir);
             offline.Sync.UseToken("dummy-token", Guid.NewGuid());
             var offSync = await offline.Sync.SyncAsync();
@@ -227,7 +227,7 @@ public static class SyncTests
             foreach (var d in dirs)
             {
                 try { Directory.Delete(d, recursive: true); }
-                catch (IOException) { /* Aufräumen ist best effort */ }
+                catch (IOException) { /* Cleanup is best effort */ }
             }
         }
     }

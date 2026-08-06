@@ -4,18 +4,18 @@ using CarApp.Obd.Pids;
 
 namespace CarApp.Application;
 
-/// <summary>Ein einzelner, dekodierter Livewert.</summary>
+/// <summary>A single, decoded live value.</summary>
 public sealed record ObdReading(string PidKey, double Value, DateTimeOffset Timestamp);
 
-/// <summary>Ordnet Readings einer laufenden Fahrt zu (implementiert vom TripRecorder).</summary>
+/// <summary>Assigns readings to an ongoing trip (implemented by TripRecorder).</summary>
 public interface ITripTracker
 {
     ValueTask<Guid?> ProcessAsync(ObdReading reading, CancellationToken ct = default);
 }
 
 /// <summary>
-/// Polling-Konfiguration: schnelle Werte jeden Zyklus, langsame nur jeden N-ten.
-/// ELM327-Klone schaffen oft nur 5–15 Anfragen/Sekunde — deshalb Prioritäten.
+/// Polling configuration: fast values every cycle, slow ones only every Nth cycle.
+/// ELM327 clones often manage only 5-15 requests/second — hence the priorities.
 /// </summary>
 public sealed class PollingProfile
 {
@@ -42,9 +42,9 @@ public sealed class PollingProfile
 }
 
 /// <summary>
-/// Pollt Livewerte vom Fahrzeug, meldet sie an die UI (Event) und historisiert
-/// JEDEN Wert als <see cref="ObdSample"/> — Kernanforderung: Verlauf ansehen können.
-/// UI-frei; eine Blazor-Seite abonniert nur <see cref="ReadingReceived"/>.
+/// Polls live values from the vehicle, reports them to the UI (event), and records
+/// EVERY value as an <see cref="ObdSample"/> — core requirement: history must be viewable.
+/// UI-free; a Blazor page just subscribes to <see cref="ReadingReceived"/>.
 /// </summary>
 public sealed class LiveDataService(
     Elm327Client client, IObdSampleStore store, IClock clock, ITripTracker? tripTracker = null)
@@ -57,7 +57,7 @@ public sealed class LiveDataService(
 
     public event Action<ObdReading>? ReadingReceived;
 
-    /// <summary>Anzahl fehlgeschlagener PID-Abfragen seit Configure (Diagnose).</summary>
+    /// <summary>Number of failed PID queries since Configure (diagnostics).</summary>
     public int FailedReads { get; private set; }
 
     public void Configure(Guid vehicleId, IReadOnlySet<byte>? supportedPids)
@@ -68,7 +68,7 @@ public sealed class LiveDataService(
         FailedReads = 0;
     }
 
-    /// <summary>Ein Poll-Zyklus — deterministisch testbar, ohne Delay.</summary>
+    /// <summary>A single poll cycle — deterministically testable, no delay.</summary>
     public async Task PollOnceAsync(CancellationToken ct = default)
     {
         if (_vehicleId == Guid.Empty)
@@ -110,7 +110,7 @@ public sealed class LiveDataService(
             await store.AppendBatchAsync(batch, ct).ConfigureAwait(false);
     }
 
-    /// <summary>Dauer-Polling bis zum Abbruch (für den echten Betrieb).</summary>
+    /// <summary>Continuous polling until cancellation (for real operation).</summary>
     public async Task RunAsync(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)

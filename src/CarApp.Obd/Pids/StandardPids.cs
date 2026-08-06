@@ -1,8 +1,8 @@
 namespace CarApp.Obd.Pids;
 
 /// <summary>
-/// Beschreibt einen OBD-II-PID (Mode 01): wie er angefragt und wie die Antwort-Bytes
-/// in einen physikalischen Wert umgerechnet werden.
+/// Describes an OBD-II PID (mode 01): how it is requested and how the response bytes
+/// are converted into a physical value.
 /// </summary>
 public sealed record PidDefinition(
     byte Pid,
@@ -12,15 +12,15 @@ public sealed record PidDefinition(
     int PayloadLength,
     Func<byte[], double> Decode)
 {
-    /// <summary>Der Befehl, der an den Adapter gesendet wird, z.B. "010C".</summary>
+    /// <summary>The command sent to the adapter, e.g. "010C".</summary>
     public string RequestCommand => $"01{Pid:X2}";
 
     public override string ToString() => $"{Key} (01 {Pid:X2})";
 }
 
 /// <summary>
-/// Registry der von der App unterstützten Standard-PIDs (SAE J1979, Mode 01).
-/// Formeln siehe SAE-Standard; A = Byte0, B = Byte1, ...
+/// Registry of the standard PIDs supported by the app (SAE J1979, mode 01).
+/// See the SAE standard for formulas; A = byte0, B = byte1, ...
 /// </summary>
 public static class StandardPids
 {
@@ -60,7 +60,7 @@ public static class StandardPids
     public static readonly PidDefinition OilTemp = new(
         0x5C, "oil_temp", "Öltemperatur", "°C", 1, p => p[0] - 40.0);
 
-    /// <summary>Kilometerstand (erst ab ~2019 verbreitet). Wert in km, Auflösung 0,1 km.</summary>
+    /// <summary>Odometer reading (only common from ~2019 onward). Value in km, 0.1 km resolution.</summary>
     public static readonly PidDefinition Odometer = new(
         0xA6, "odometer", "Kilometerstand", "km", 4,
         p => ((uint)p[0] << 24 | (uint)p[1] << 16 | (uint)p[2] << 8 | p[3]) / 10.0);
@@ -77,9 +77,9 @@ public static class StandardPids
         All.FirstOrDefault(d => d.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// Wertet die Bitmasken der Supported-PID-Abfragen (0100, 0120, 0140, …) aus.
-    /// <paramref name="rangeStart"/> ist der PID der Abfrage (0x00, 0x20, 0x40, …),
-    /// <paramref name="mask"/> die 4 Antwort-Bytes. Bit 31 (MSB von A) = PID rangeStart+1.
+    /// Evaluates the bitmasks of the supported-PID queries (0100, 0120, 0140, …).
+    /// <paramref name="rangeStart"/> is the PID of the query (0x00, 0x20, 0x40, …),
+    /// <paramref name="mask"/> is the 4 response bytes. Bit 31 (MSB of A) = PID rangeStart+1.
     /// </summary>
     public static IEnumerable<byte> DecodeSupportedPidMask(byte rangeStart, byte[] mask)
     {

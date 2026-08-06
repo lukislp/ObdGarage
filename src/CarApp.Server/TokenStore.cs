@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace CarApp.Server;
 
-/// <summary>Serverseitiger Token-Eintrag — es wird nur der SHA256-Hash gespeichert.</summary>
+/// <summary>Server-side token entry — only the SHA256 hash is stored.</summary>
 public sealed class TokenRecord
 {
     public required string TokenHash { get; set; }
@@ -14,9 +14,9 @@ public sealed class TokenRecord
 }
 
 /// <summary>
-/// Bearer-Tokens in tokens.json: 32 Zufallsbytes als Base64Url an den Client,
-/// serverseitig nur der SHA256-Hash (ein Datei-Leck verrät keine gültigen Tokens).
-/// Ablauf nach 90 Tagen; abgelaufene Einträge werden beim Zugriff entfernt.
+/// Bearer tokens in tokens.json: 32 random bytes as Base64Url sent to the client,
+/// only the SHA256 hash stored server-side (a file leak reveals no valid tokens).
+/// Expires after 90 days; expired entries are removed on access.
 /// </summary>
 public sealed class TokenStore(string filePath)
 {
@@ -26,7 +26,7 @@ public sealed class TokenStore(string filePath)
     private readonly SemaphoreSlim _lock = new(1, 1);
     private List<TokenRecord>? _cache;
 
-    /// <summary>Erzeugt ein neues Token für den Nutzer und liefert es im Klartext zurück.</summary>
+    /// <summary>Generates a new token for the user and returns it in plain text.</summary>
     public async Task<string> IssueAsync(Guid userId, DateTimeOffset now, CancellationToken ct = default)
     {
         var token = Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
@@ -47,7 +47,7 @@ public sealed class TokenStore(string filePath)
         finally { _lock.Release(); }
     }
 
-    /// <summary>Liefert die UserId zum Token — oder null bei unbekannt/abgelaufen.</summary>
+    /// <summary>Returns the UserId for the token — or null if unknown/expired.</summary>
     public async Task<Guid?> ValidateAsync(string token, DateTimeOffset now, CancellationToken ct = default)
     {
         var hash = HashOf(token);

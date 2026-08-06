@@ -5,9 +5,9 @@ using CarApp.Core;
 namespace CarApp.Web.Services;
 
 /// <summary>
-/// Serverseitig gerenderter SVG-Linienchart für die Verlaufsansicht:
-/// Linie in Akzentfarbe, Min/Max-Band bei aggregierten Samples,
-/// dezente Gitterlinien, kleine graue Achsenbeschriftung. Kein externes Framework.
+/// Server-side rendered SVG line chart for the history view:
+/// line in accent color, min/max band for aggregated samples,
+/// subtle gridlines, small gray axis labels. No external framework.
 /// </summary>
 public static class SvgChart
 {
@@ -48,7 +48,7 @@ public static class SvgChart
         sb.Append($"<svg class=\"chart\" viewBox=\"0 0 {Width} {Height}\" role=\"img\" ");
         sb.Append("preserveAspectRatio=\"xMidYMid meet\" xmlns=\"http://www.w3.org/2000/svg\">");
 
-        // Horizontale Gitterlinien + y-Beschriftung
+        // Horizontal gridlines + y-axis labels
         const int yLines = 4;
         for (int i = 0; i <= yLines; i++)
         {
@@ -60,7 +60,7 @@ public static class SvgChart
             sb.Append("</text>");
         }
 
-        // x-Beschriftung (4 Zeitmarken)
+        // x-axis labels (4 time marks)
         var multiDay = (tMax - tMin) > TimeSpan.FromHours(24);
         const int xLabels = 4;
         for (int i = 0; i <= xLabels; i++)
@@ -73,7 +73,7 @@ public static class SvgChart
             sb.Append($"<text class=\"chart-label\" x=\"{N(x)}\" y=\"{Height - PadBottom + 18}\" text-anchor=\"{anchor}\">{label}</text>");
         }
 
-        // Min/Max-Band (nur wenn aggregierte Samples vorhanden sind)
+        // Min/max band (only when aggregated samples are present)
         if (samples.Any(s => s.IsAggregated && s.MinValue is not null && s.MaxValue is not null))
         {
             var band = new StringBuilder("<path class=\"chart-band\" d=\"");
@@ -94,13 +94,13 @@ public static class SvgChart
             sb.Append(band);
         }
 
-        // Wertelinie (Avg bzw. Rohwert)
+        // Value line (avg or raw value)
         var points = new StringBuilder();
         foreach (var s in samples)
             points.Append(N(X(s.Timestamp))).Append(',').Append(N(Y(s.Value))).Append(' ');
         sb.Append($"<polyline class=\"chart-line\" points=\"{points.ToString().TrimEnd()}\"/>");
 
-        // Einheit oben links
+        // Unit label top left
         sb.Append($"<text class=\"chart-label\" x=\"{PadLeft - 6}\" y=\"{PadTop - 2}\" text-anchor=\"end\">{unit}</text>");
 
         sb.Append("</svg>");

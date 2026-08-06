@@ -1,17 +1,17 @@
 namespace CarApp.Web.Services;
 
 /// <summary>
-/// Lokaler App-Zustand: impliziter lokaler Nutzer (bis zum ersten Login)
-/// und die aktuellen Sync-Einstellungen (Seite /settings).
+/// Local app state: implicit local user (until the first login)
+/// and the current sync settings (page /settings).
 /// </summary>
 public sealed class AppState
 {
-    /// <summary>Fester impliziter Nutzer — Besitzer aller Fahrzeuge vor dem ersten Login.</summary>
+    /// <summary>Fixed implicit user — owner of all vehicles before the first login.</summary>
     public static readonly Guid LocalUserId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
     /// <summary>
-    /// Aktive Nutzer-Id: anfangs <see cref="LocalUserId"/>, nach dem ersten Login die
-    /// Server-UserId (der SyncManager migriert dabei die OwnerUserId der lokalen Fahrzeuge).
+    /// Active user id: initially <see cref="LocalUserId"/>, after the first login the
+    /// server user id (the SyncManager migrates the OwnerUserId of local vehicles in the process).
     /// </summary>
     public Guid CurrentUserId { get; set; } = LocalUserId;
 

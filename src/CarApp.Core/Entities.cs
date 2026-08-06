@@ -38,8 +38,8 @@ public enum MaintenanceType
 }
 
 /// <summary>
-/// Basisklasse aller synchronisierbaren Entitäten (offline-first, siehe Plan 2.3).
-/// IDs werden clientseitig erzeugt (sync-freundlich), Zeitstempel sind UTC.
+/// Base class for all synchronizable entities (offline-first, see plan 2.3).
+/// IDs are generated client-side (sync-friendly), timestamps are UTC.
 /// </summary>
 public abstract class SyncEntity
 {
@@ -55,7 +55,7 @@ public abstract class SyncEntity
     }
 }
 
-/// <summary>Fahrzeug — gehört genau einem Nutzer (kein Teilen).</summary>
+/// <summary>Vehicle — belongs to exactly one user (no sharing).</summary>
 public class Vehicle : SyncEntity
 {
     public Guid OwnerUserId { get; set; }
@@ -66,11 +66,11 @@ public class Vehicle : SyncEntity
     public string? Model { get; set; }
     public int? ModelYear { get; set; }
     public string? PhotoPath { get; set; }
-    /// <summary>Nächster TÜV/HU-Termin — Komfortfeld für die Fahrzeugkarte.</summary>
+    /// <summary>Next TÜV/HU (inspection) due date — convenience field for the vehicle card.</summary>
     public DateOnly? InspectionDueDate { get; set; }
     public OdometerSource OdometerSource { get; set; } = OdometerSource.Manual;
     public double? LastKnownOdometerKm { get; set; }
-    /// <summary>Vom Fahrzeug unterstützte Mode-01-PIDs (einmalig gescannt).</summary>
+    /// <summary>Mode-01 PIDs supported by the vehicle (scanned once).</summary>
     public List<byte> SupportedPids { get; set; } = [];
 }
 
@@ -79,7 +79,7 @@ public class AdapterProfile : SyncEntity
     public Guid? VehicleId { get; set; }
     public required string Name { get; set; }
     public AdapterTransportType TransportType { get; set; }
-    /// <summary>MAC-Adresse (BT), Geräte-UUID (BLE) oder "host:port" (WLAN).</summary>
+    /// <summary>MAC address (BT), device UUID (BLE), or "host:port" (WiFi).</summary>
     public required string Address { get; set; }
 }
 
@@ -104,19 +104,19 @@ public class Trip : SyncEntity
 }
 
 /// <summary>
-/// Historisierter Livewert: JEDER gepollte OBD-Wert wird gespeichert (Long-Format),
-/// damit Verläufe angeschaut werden können — auch außerhalb von Fahrten.
-/// Append-only; alte Rohdaten werden per Retention zu Minuten-Aggregaten verdichtet.
+/// Historized live value: EVERY polled OBD value is stored (long format),
+/// so that trends can be viewed — even outside of trips.
+/// Append-only; old raw data is compacted into per-minute aggregates via retention.
 /// </summary>
 public class ObdSample : SyncEntity
 {
     public Guid VehicleId { get; set; }
     public Guid? TripId { get; set; }
-    /// <summary>Wert-Schlüssel aus der PID-Registry, z.B. "rpm", "coolant_temp".</summary>
+    /// <summary>Value key from the PID registry, e.g. "rpm", "coolant_temp".</summary>
     public required string PidKey { get; set; }
     public DateTimeOffset Timestamp { get; set; }
     public double Value { get; set; }
-    /// <summary>False = Rohwert; True = Minuten-Aggregat nach Retention-Verdichtung.</summary>
+    /// <summary>False = raw value; True = per-minute aggregate after retention compaction.</summary>
     public bool IsAggregated { get; set; }
     public double? MinValue { get; set; }
     public double? MaxValue { get; set; }

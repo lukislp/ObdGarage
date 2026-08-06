@@ -1,25 +1,25 @@
 namespace CarApp.Shared;
 
-/// <summary>Registrierung — nur mit gültigem Einladungscode (Heimserver, Plan 2.2a).</summary>
+/// <summary>Registration — only with a valid invite code (home server, plan 2.2a).</summary>
 public sealed record RegisterRequest(string Email, string Password, string InviteCode);
 
 public sealed record LoginRequest(string Email, string Password);
 
-/// <summary>Bearer-Token (Base64Url aus 32 Zufallsbytes) + Nutzer-Id für die App.</summary>
+/// <summary>Bearer token (Base64Url from 32 random bytes) + user ID for the app.</summary>
 public sealed record LoginResponse(string Token, Guid UserId);
 
-/// <summary>Einheitliches Fehlerformat aller API-Endpunkte.</summary>
+/// <summary>Uniform error format for all API endpoints.</summary>
 public sealed record ErrorResponse(string Error);
 
 /// <summary>
-/// Antwort auf einen Push: wie viele Entitäten der Server übernommen hat und
-/// wie viele (z.B. fremde Fahrzeuge) verworfen wurden.
+/// Response to a push: how many entities the server accepted and
+/// how many (e.g. vehicles belonging to another user) were rejected.
 /// </summary>
 public sealed record SyncPushResponse(int Accepted, int Rejected);
 
 /// <summary>
-/// Pull-Antwort pro Entitätstyp: alle Änderungen seit <c>?since=</c> (inklusive
-/// Soft-Deletes) plus die Serverzeit als Referenz für den nächsten Sync.
+/// Pull response per entity type: all changes since <c>?since=</c> (including
+/// soft-deletes) plus the server time as a reference for the next sync.
 /// </summary>
 public sealed class SyncEnvelope<T>
 {

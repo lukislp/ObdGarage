@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace CarApp.Server;
 
-/// <summary>Benutzerkonto — existiert nur serverseitig (die App speichert nur Token + UserId).</summary>
+/// <summary>User account — exists only server-side (the app only stores token + UserId).</summary>
 public sealed class User
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -13,8 +13,8 @@ public sealed class User
 }
 
 /// <summary>
-/// Benutzerkonten in einer JSON-Datei. Passwörter als PBKDF2-Hash
-/// (SHA256, 210.000 Iterationen, 16-Byte-Salt) — nie im Klartext.
+/// User accounts in a JSON file. Passwords as PBKDF2 hash
+/// (SHA256, 210,000 iterations, 16-byte salt) — never in plain text.
 /// </summary>
 public sealed class UserStore(string filePath)
 {
@@ -26,7 +26,7 @@ public sealed class UserStore(string filePath)
     private readonly SemaphoreSlim _lock = new(1, 1);
     private List<User>? _cache;
 
-    /// <summary>Legt ein Konto an. Null, wenn die E-Mail bereits registriert ist.</summary>
+    /// <summary>Creates an account. Null if the email is already registered.</summary>
     public async Task<User?> RegisterAsync(string email, string password, CancellationToken ct = default)
     {
         var normalized = Normalize(email);
@@ -51,7 +51,7 @@ public sealed class UserStore(string filePath)
         finally { _lock.Release(); }
     }
 
-    /// <summary>Prüft E-Mail + Passwort. Null bei unbekanntem Konto oder falschem Passwort.</summary>
+    /// <summary>Verifies email + password. Null for unknown account or wrong password.</summary>
     public async Task<User?> VerifyAsync(string email, string password, CancellationToken ct = default)
     {
         var normalized = Normalize(email);

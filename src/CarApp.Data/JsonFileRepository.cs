@@ -4,9 +4,9 @@ using CarApp.Core;
 namespace CarApp.Data;
 
 /// <summary>
-/// Dependency-freie Persistenz: eine JSON-Datei pro Entitätstyp, atomare Schreibvorgänge
-/// (tmp + Move), threadsicher. Erfüllt IRepository&lt;T&gt; aus Core — der spätere Umstieg
-/// auf EF Core/SQLite ist ein reiner Austausch der Registrierung, kein UI-/Service-Umbau.
+/// Dependency-free persistence: one JSON file per entity type, atomic writes
+/// (tmp + move), thread-safe. Implements IRepository&lt;T&gt; from Core — the later switch
+/// to EF Core/SQLite is a pure registration swap, no UI/service rework needed.
 /// </summary>
 public sealed class JsonFileRepository<T> : ISyncRepository<T> where T : SyncEntity
 {

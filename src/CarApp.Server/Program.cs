@@ -1,3 +1,3 @@
-// Schlanker Einstieg — die komplette App-Konfiguration liegt in ServerApp.BuildApp
-// (so kann der TestRunner denselben Server in-process starten).
+// Thin entry point — the full app configuration lives in ServerApp.BuildApp
+// (so the TestRunner can start the same server in-process).
 CarApp.Server.ServerApp.BuildApp(args).Run();

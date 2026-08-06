@@ -5,10 +5,10 @@ using CarApp.Core;
 namespace CarApp.Web.Services;
 
 /// <summary>
-/// Web-seitige Hülle um <see cref="SyncService"/>: hält Token + Server-URL in
-/// <c>data/sync-auth.json</c> (übersteht App-Neustarts), erzeugt den HttpClient
-/// passend zur Server-URL und stellt beim ersten Login die OwnerUserId der lokal
-/// angelegten Fahrzeuge auf die Server-UserId um — sonst verwirft der Server sie beim Push.
+/// Web-side wrapper around <see cref="SyncService"/>: keeps the token + server URL in
+/// <c>data/sync-auth.json</c> (survives app restarts), creates the HttpClient
+/// matching the server URL, and on first login switches the OwnerUserId of locally
+/// created vehicles over to the server user id — otherwise the server rejects them on push.
 /// </summary>
 public sealed class SyncManager
 {
@@ -169,8 +169,8 @@ public sealed class SyncManager
     }
 
     /// <summary>
-    /// Einmalige Zuordnung beim ersten Login: alle Fahrzeuge des impliziten lokalen
-    /// Nutzers gehören ab jetzt dem Server-Konto (sonst Rejected beim Push).
+    /// One-time reassignment on first login: all vehicles belonging to the implicit local
+    /// user now belong to the server account (otherwise they get rejected on push).
     /// </summary>
     private async Task MigrateVehicleOwnerAsync(Guid serverUserId)
     {
@@ -186,7 +186,7 @@ public sealed class SyncManager
         _state.CurrentUserId = serverUserId;
     }
 
-    /// <summary>HttpClient + SyncService passend zur Server-URL (bei URL-Wechsel neu aufbauen).</summary>
+    /// <summary>HttpClient + SyncService matching the server URL (rebuilt when the URL changes).</summary>
     private SyncService GetService(string serverUrl)
     {
         var baseUrl = serverUrl.Trim().TrimEnd('/') + "/";
@@ -227,7 +227,7 @@ public sealed class SyncManager
         _state.SyncEmail = _auth.Email;
         _state.LastSyncAt = _auth.LastSyncAt;
         if (_auth.UserId is { } userId)
-            _state.CurrentUserId = userId; // Login übersteht den Neustart
+            _state.CurrentUserId = userId; // Login survives the restart
     }
 
     private void SaveAuth() =>

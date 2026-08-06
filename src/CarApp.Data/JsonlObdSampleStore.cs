@@ -4,8 +4,8 @@ using CarApp.Core;
 namespace CarApp.Data;
 
 /// <summary>
-/// Livewerte-Historie als JSON-Lines-Datei pro Fahrzeug: appends sind billig
-/// (hohes Schreibvolumen beim Polling), Kompaktierung schreibt die Datei atomar neu.
+/// Live-value history as a JSON-Lines file per vehicle: appends are cheap
+/// (high write volume during polling), compaction rewrites the file atomically.
 /// </summary>
 public sealed class JsonlObdSampleStore(string directory) : IObdSampleStore
 {

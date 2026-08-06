@@ -4,9 +4,9 @@ using CarApp.Obd.Pids;
 namespace CarApp.Application;
 
 /// <summary>
-/// Automatisches Fahrtenbuch: erkennt Fahrtbeginn (Geschwindigkeit über Schwelle)
-/// und Fahrtende (Stillstand über Timeout oder Verbindungsverlust),
-/// integriert die Distanz aus den Geschwindigkeits-Samples (Trapezregel).
+/// Automatic trip log: detects trip start (speed above threshold)
+/// and trip end (standstill beyond timeout or loss of connection),
+/// integrates the distance from the speed samples (trapezoidal rule).
 /// </summary>
 public sealed class TripRecorder(IRepository<Trip> trips, IClock clock) : ITripTracker
 {
@@ -17,7 +17,7 @@ public sealed class TripRecorder(IRepository<Trip> trips, IClock clock) : ITripT
 
     public TimeSpan IdleTimeout { get; set; } = TimeSpan.FromSeconds(120);
     public double StartSpeedThresholdKmh { get; set; } = 3.0;
-    /// <summary>Lücken über dieser Dauer fließen nicht in die Distanz ein (Verbindungsabbruch).</summary>
+    /// <summary>Gaps longer than this duration are not included in the distance (connection loss).</summary>
     public TimeSpan MaxIntegrationGap { get; set; } = TimeSpan.FromSeconds(30);
 
     public Guid VehicleId { get; set; }
@@ -42,7 +42,7 @@ public sealed class TripRecorder(IRepository<Trip> trips, IClock clock) : ITripT
                 return null;
         }
 
-        // Distanz integrieren (Trapezregel), Lücken überspringen
+        // Integrate distance (trapezoidal rule), skip gaps
         if (_lastSpeed is { } lastSpeed && _lastSpeedAt is { } lastAt)
         {
             var dt = now - lastAt;
@@ -65,7 +65,7 @@ public sealed class TripRecorder(IRepository<Trip> trips, IClock clock) : ITripT
         return CurrentTrip?.Id;
     }
 
-    /// <summary>Bei Verbindungsverlust/Zündung aus aufrufen — beendet eine laufende Fahrt.</summary>
+    /// <summary>Call on connection loss/ignition off — ends an ongoing trip.</summary>
     public Task NotifyDisconnectedAsync(CancellationToken ct = default) =>
         CurrentTrip is null ? Task.CompletedTask : EndTripAsync(clock.UtcNow, ct);
 

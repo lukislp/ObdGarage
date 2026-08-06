@@ -6,9 +6,9 @@ using CarApp.Shared;
 namespace CarApp.Server;
 
 /// <summary>
-/// Baut die komplette Server-App (Auth, Sync, Samples) auf Basis der JSON-Persistenz
-/// aus CarApp.Data. Als eigene Methode, damit Tests den Server in-process starten
-/// können — Program.cs ruft nur BuildApp(args).Run().
+/// Builds the complete server app (auth, sync, samples) on top of the JSON persistence
+/// from CarApp.Data. Kept as its own method so tests can start the server in-process —
+/// Program.cs just calls BuildApp(args).Run().
 /// </summary>
 public static class ServerApp
 {
@@ -38,7 +38,7 @@ public static class ServerApp
 
         app.MapGet("/api/v1/health", () => Results.Ok(new { status = "ok" }));
 
-        // --- Auth (öffentlich) ---------------------------------------------------------
+        // --- Auth (public) ---------------------------------------------------------
 
         app.MapPost("/api/v1/auth/register", async (RegisterRequest req, CancellationToken ct) =>
         {
@@ -63,7 +63,7 @@ public static class ServerApp
             return Results.Ok(new LoginResponse(token, user.Id));
         });
 
-        // --- Geschützter Bereich: Bearer-Token-Prüfung als Endpoint-Filter --------------
+        // --- Protected area: bearer token check as an endpoint filter --------------
 
         var api = app.MapGroup("/api/v1").AddEndpointFilter(async (ctx, next) =>
         {
@@ -79,7 +79,7 @@ public static class ServerApp
             return await next(ctx);
         });
 
-        // --- Sync-API: Push (LWW) + Pull (?since=) pro Entität, strikt nutzer-gescopet ---
+        // --- Sync API: push (LWW) + pull (?since=) per entity, strictly user-scoped ---
 
         var sync = api.MapGroup("/sync");
         MapVehicleSync(sync, vehicles, clock);
@@ -90,7 +90,7 @@ public static class ServerApp
         MapChildSync(sync, "fuelentries", fuelEntries, vehicles, clock, e => e.VehicleId);
         MapChildSync(sync, "expenses", expenses, vehicles, clock, e => e.VehicleId);
 
-        // --- Livewerte-Historie: Batch-Append + Verlaufsabfrage --------------------------
+        // --- Live value history: batch append + history query --------------------------
 
         api.MapPost("/samples", async (HttpContext http, List<ObdSample> batch, CancellationToken ct) =>
         {
@@ -119,7 +119,7 @@ public static class ServerApp
         return app;
     }
 
-    /// <summary>Fahrzeuge: Besitz direkt über OwnerUserId aus dem Token.</summary>
+    /// <summary>Vehicles: ownership directly via OwnerUserId from the token.</summary>
     private static void MapVehicleSync(RouteGroupBuilder sync, ISyncRepository<Vehicle> vehicles, IClock clock)
     {
         sync.MapPost("/vehicles", async (HttpContext http, List<Vehicle> batch, CancellationToken ct) =>
@@ -130,7 +130,7 @@ public static class ServerApp
             foreach (var incoming in batch)
             {
                 var existing = existingAll.GetValueOrDefault(incoming.Id);
-                // Fremde Daten werden ignoriert: falscher Owner ODER Versuch, ein fremdes Fahrzeug zu kapern.
+                // Foreign data is ignored: wrong owner OR attempt to hijack someone else's vehicle.
                 if (incoming.OwnerUserId != userId || (existing is not null && existing.OwnerUserId != userId))
                 {
                     rejected++;
@@ -138,7 +138,7 @@ public static class ServerApp
                 }
                 accepted++;
                 if (existing is not null && existing.ModifiedAt >= incoming.ModifiedAt)
-                    continue; // Last-Write-Wins: ältere Version überschreibt nicht.
+                    continue; // Last-Write-Wins: older version does not overwrite.
                 incoming.SyncState = SyncState.Synced;
                 await vehicles.UpsertAsync(incoming, ct);
                 existingAll[incoming.Id] = incoming;
@@ -157,7 +157,7 @@ public static class ServerApp
         });
     }
 
-    /// <summary>Kind-Entitäten: Besitz über die VehicleId (Fahrzeug muss dem Token-Nutzer gehören).</summary>
+    /// <summary>Child entities: ownership via VehicleId (vehicle must belong to the token's user).</summary>
     private static void MapChildSync<T>(RouteGroupBuilder sync, string name,
         ISyncRepository<T> repo, ISyncRepository<Vehicle> vehicles, IClock clock,
         Func<T, Guid?> vehicleIdOf) where T : SyncEntity
@@ -202,7 +202,7 @@ public static class ServerApp
 
     private static Guid UserIdOf(HttpContext http) => (Guid)http.Items["UserId"]!;
 
-    /// <summary>Alle Fahrzeug-Ids des Nutzers — inkl. gelöschter, damit Kind-Tombstones synchronisierbar bleiben.</summary>
+    /// <summary>All vehicle IDs of the user — including deleted ones, so child tombstones remain syncable.</summary>
     private static async Task<HashSet<Guid>> OwnedVehicleIdsAsync(
         ISyncRepository<Vehicle> vehicles, Guid userId, CancellationToken ct) =>
         (await vehicles.GetAllIncludingDeletedAsync(ct))

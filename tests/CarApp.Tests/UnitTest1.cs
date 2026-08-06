@@ -4,7 +4,7 @@ using CarApp.Obd.Transport;
 
 namespace CarApp.Tests;
 
-/// <summary>Reine Dekodier-Tests: Antwort-Bytes → physikalischer Wert (SAE J1979).</summary>
+/// <summary>Pure decoding tests: response bytes → physical value (SAE J1979).</summary>
 public class PidDecodeTests
 {
     [Fact]
@@ -34,36 +34,36 @@ public class PidDecodeTests
     [Fact]
     public void Odometer_PidA6_DecodesToTenthKilometers()
     {
-        // 0x0012D687 = 1.234.567 → 123.456,7 km
+        // 0x0012D687 = 1,234,567 → 123,456.7 km
         Assert.Equal(123456.7, StandardPids.Odometer.Decode([0x00, 0x12, 0xD6, 0x87]), 3);
     }
 
     [Fact]
     public void SupportedPidMask_DecodesKnownExample()
     {
-        // Klassisches Beispiel: 41 00 BE 1F A8 13
+        // Classic example: 41 00 BE 1F A8 13
         var supported = StandardPids
             .DecodeSupportedPidMask(0x00, [0xBE, 0x1F, 0xA8, 0x13])
             .ToHashSet();
 
-        Assert.Contains((byte)0x0C, supported); // Drehzahl
-        Assert.Contains((byte)0x0D, supported); // Geschwindigkeit
-        Assert.Contains((byte)0x11, supported); // Drosselklappe
-        Assert.Contains((byte)0x20, supported); // nächster Bereich existiert
+        Assert.Contains((byte)0x0C, supported); // RPM
+        Assert.Contains((byte)0x0D, supported); // Speed
+        Assert.Contains((byte)0x11, supported); // Throttle
+        Assert.Contains((byte)0x20, supported); // next range exists
         Assert.DoesNotContain((byte)0x02, supported);
         Assert.DoesNotContain((byte)0x08, supported);
     }
 }
 
-/// <summary>Sicherheits-Whitelist: Es dürfen nur Lese-Befehle rausgehen.</summary>
+/// <summary>Safety whitelist: only read commands may go out.</summary>
 public class CommandWhitelistTests
 {
     [Theory]
-    [InlineData("010C")]   // Livedaten
+    [InlineData("010C")]   // Live data
     [InlineData("0100")]   // Supported PIDs
     [InlineData("01A6")]   // Odometer
     [InlineData("0902")]   // VIN
-    [InlineData("03")]     // DTCs lesen
+    [InlineData("03")]     // Read DTCs
     [InlineData("ATZ")]
     [InlineData("ATE0")]
     [InlineData("ATSP0")]
@@ -72,11 +72,11 @@ public class CommandWhitelistTests
         Assert.True(Elm327Client.IsCommandAllowed(command));
 
     [Theory]
-    [InlineData("04")]        // Fehlercodes löschen — verboten!
-    [InlineData("2E1234FF")]  // UDS WriteDataByIdentifier — verboten!
-    [InlineData("ATSH7E0")]   // Header setzen — verboten
-    [InlineData("10")]        // UDS Session Control — verboten
-    [InlineData("3101FF00")]  // UDS Routine Control — verboten
+    [InlineData("04")]        // Clear DTCs — forbidden!
+    [InlineData("2E1234FF")]  // UDS WriteDataByIdentifier — forbidden!
+    [InlineData("ATSH7E0")]   // Set header — forbidden
+    [InlineData("10")]        // UDS Session Control — forbidden
+    [InlineData("3101FF00")]  // UDS Routine Control — forbidden
     public void Blocks_WriteCommands(string command) =>
         Assert.False(Elm327Client.IsCommandAllowed(command));
 
@@ -88,7 +88,7 @@ public class CommandWhitelistTests
     }
 }
 
-/// <summary>Integrationstests des Clients gegen den simulierten Adapter.</summary>
+/// <summary>Integration tests of the client against the simulated adapter.</summary>
 public class Elm327ClientTests
 {
     private static ReplayTransport NewInitializedScript()
@@ -161,9 +161,9 @@ public class Elm327ClientTests
 
         Assert.Contains((byte)0x0C, supported);
         Assert.Contains((byte)0x0D, supported);
-        Assert.Contains((byte)0x21, supported); // aus Bereich 0120
+        Assert.Contains((byte)0x21, supported); // from range 0120
         Assert.DoesNotContain((byte)0x02, supported);
-        // Bereich 0140 wurde nicht mehr abgefragt (letztes Bit von 0120 war 0):
+        // Range 0140 was not queried further (last bit of 0120 was 0):
         Assert.DoesNotContain("0140", transport.SentCommands);
     }
 

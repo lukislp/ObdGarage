@@ -5,18 +5,18 @@ using CarApp.Shared;
 
 namespace CarApp.Application;
 
-/// <summary>Ergebnis eines Auth-Aufrufs — Fehler als Text, kein Throw bei Offline.</summary>
+/// <summary>Result of an auth call — error as text, no throw when offline.</summary>
 public sealed record AuthResult(bool Success, string? Error = null);
 
-/// <summary>Ergebnis eines Sync-Laufs (Pushed = vom Server akzeptierte Entitäten).</summary>
+/// <summary>Result of a sync run (Pushed = entities accepted by the server).</summary>
 public sealed record SyncResult(bool Success, int Pushed, int Pulled, string? Error = null);
 
 /// <summary>
-/// Client-Seite des Offline-First-Syncs (Plan 2.3): Push aller Pending-Änderungen,
-/// danach Pull aller Server-Änderungen seit dem letzten Sync (Last-Write-Wins per
-/// ModifiedAt). Der Zeitstempel des letzten Syncs liegt in einer kleinen JSON-Datei.
-/// Ist das Backend nicht erreichbar, liefern alle Methoden ein sauberes
-/// Ergebnisobjekt statt einer Exception — die App arbeitet lokal weiter.
+/// Client side of offline-first sync (Plan 2.3): push all pending changes,
+/// then pull all server changes since the last sync (Last-Write-Wins per
+/// ModifiedAt). The timestamp of the last sync is stored in a small JSON file.
+/// If the backend is unreachable, all methods return a clean result object
+/// instead of throwing an exception — the app keeps working locally.
 /// </summary>
 public sealed class SyncService(
     HttpClient http,
@@ -36,10 +36,10 @@ public sealed class SyncService(
     public string? Token { get; private set; }
     public Guid UserId { get; private set; }
 
-    /// <summary>Hook, um ein frisches Token z.B. in SecureStorage zu übernehmen.</summary>
+    /// <summary>Hook to adopt a fresh token, e.g. into SecureStorage.</summary>
     public Action<string, Guid>? TokenChanged { get; set; }
 
-    /// <summary>Vorhandenes Token wiederverwenden (z.B. aus SecureStorage beim App-Start).</summary>
+    /// <summary>Reuse an existing token (e.g. from SecureStorage at app start).</summary>
     public void UseToken(string token, Guid userId)
     {
         Token = token;
@@ -87,7 +87,7 @@ public sealed class SyncService(
         }
     }
 
-    /// <summary>Push aller Pending-Entitäten, dann Pull seit letztem Sync. Reihenfolge: erst Fahrzeuge (Besitz), dann Kind-Entitäten.</summary>
+    /// <summary>Push all pending entities, then pull since the last sync. Order: vehicles first (ownership), then child entities.</summary>
     public async Task<SyncResult> SyncAsync(CancellationToken ct = default)
     {
         if (Token is null)
@@ -129,12 +129,12 @@ public sealed class SyncService(
         }
         catch (HttpRequestException ex)
         {
-            // Offline oder Server-Fehler: lokale Daten bleiben unangetastet, kein Crash.
+            // Offline or server error: local data remains untouched, no crash.
             return new SyncResult(false, 0, 0, ex.Message);
         }
     }
 
-    /// <summary>Schiebt einen Samples-Batch zum Server (append-only, kein Konfliktpotenzial).</summary>
+    /// <summary>Pushes a samples batch to the server (append-only, no conflict potential).</summary>
     public async Task<SyncPushResponse?> PushSamplesAsync(IReadOnlyList<ObdSample> batch,
         CancellationToken ct = default)
     {
@@ -151,7 +151,7 @@ public sealed class SyncService(
         }
     }
 
-    /// <summary>Schiebt lokale Samples aus dem Store (Zeitfenster) zum Server.</summary>
+    /// <summary>Pushes local samples from the store (time window) to the server.</summary>
     public async Task<SyncPushResponse?> PushLocalSamplesAsync(Guid vehicleId,
         DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
     {
@@ -161,7 +161,7 @@ public sealed class SyncService(
         return batch.Count == 0 ? new SyncPushResponse(0, 0) : await PushSamplesAsync(batch, ct).ConfigureAwait(false);
     }
 
-    /// <summary>Verlaufsabfrage gegen den Server. Null bei fehlender Verbindung oder fehlendem Zugriff.</summary>
+    /// <summary>History query against the server. Null if there's no connection or no access.</summary>
     public async Task<IReadOnlyList<ObdSample>?> QuerySamplesAsync(Guid vehicleId, string? pidKey,
         DateTimeOffset? from = null, DateTimeOffset? to = null, CancellationToken ct = default)
     {
@@ -200,7 +200,7 @@ public sealed class SyncService(
         var result = await resp.Content.ReadFromJsonAsync<SyncPushResponse>(Json, ct).ConfigureAwait(false)
             ?? new SyncPushResponse(0, 0);
 
-        // Erfolgreich übertragen → lokal als Synced markieren (ModifiedAt bleibt unverändert).
+        // Successfully transferred → mark locally as Synced (ModifiedAt remains unchanged).
         foreach (var e in pending)
         {
             e.SyncState = SyncState.Synced;
@@ -226,7 +226,7 @@ public sealed class SyncService(
         var applied = 0;
         foreach (var item in envelope.Items)
         {
-            // Last-Write-Wins: nur übernehmen, wenn der Server-Stand neuer ist.
+            // Last-Write-Wins: only apply if the server version is newer.
             if (local.TryGetValue(item.Id, out var mine) && mine.ModifiedAt >= item.ModifiedAt)
                 continue;
             item.SyncState = SyncState.Synced;
@@ -249,7 +249,7 @@ public sealed class SyncService(
         }
     }
 
-    // --- Zeitstempel des letzten Syncs (kleine JSON-Datei) ------------------------------
+    // --- Timestamp of the last sync (small JSON file) ------------------------------
 
     private sealed class SyncStateFile
     {

@@ -4,7 +4,7 @@ namespace CarApp.Application;
 
 public enum DueBadge { Green, Yellow, Red }
 
-/// <summary>Fälligkeitsstatus einer Wartungsaufgabe — Grundlage für Karte + Erinnerungen.</summary>
+/// <summary>Due status of a maintenance task — basis for the card + reminders.</summary>
 public sealed record MaintenanceStatus(
     MaintenanceTask Task,
     double? RemainingKm,
@@ -12,7 +12,7 @@ public sealed record MaintenanceStatus(
     bool IsOverdue,
     DueBadge Badge);
 
-/// <summary>Reine Rechenlogik, komplett UI- und IO-frei (voll testbar).</summary>
+/// <summary>Pure calculation logic, completely UI- and IO-free (fully testable).</summary>
 public static class MaintenanceCalculator
 {
     public static MaintenanceStatus GetStatus(MaintenanceTask task, double? currentKm, DateOnly today)
@@ -32,7 +32,7 @@ public static class MaintenanceCalculator
         return new MaintenanceStatus(task, remainingKm, remainingDays, overdue, GetBadge(remainingKm, remainingDays));
     }
 
-    /// <summary>Die dringendste Aufgabe eines Fahrzeugs (für die Fahrzeugkarte).</summary>
+    /// <summary>The most urgent task for a vehicle (for the vehicle card).</summary>
     public static MaintenanceStatus? MostUrgent(
         IEnumerable<MaintenanceTask> tasks, double? currentKm, DateOnly today) =>
         tasks.Select(t => GetStatus(t, currentKm, today))
@@ -48,9 +48,9 @@ public static class MaintenanceCalculator
 
     private static double Urgency(MaintenanceStatus s)
     {
-        // Normalisieren: Tage und km auf eine vergleichbare Skala bringen.
+        // Normalize: bring days and km to a comparable scale.
         var byDays = s.RemainingDays is { } d ? d : double.MaxValue;
-        var byKm = s.RemainingKm is { } km ? km / 40.0 : double.MaxValue; // ~40 km/Tag
+        var byKm = s.RemainingKm is { } km ? km / 40.0 : double.MaxValue; // ~40 km/day
         return Math.Min(byDays, byKm);
     }
 }

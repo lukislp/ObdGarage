@@ -1,5 +1,5 @@
-// Paketfreier Test-Runner (NuGet ist in der Cloud-Sandbox blockiert).
-// Führt dieselben Fälle aus wie tests/CarApp.Tests — dort als xunit für `dotnet test` zuhause.
+// Package-free test runner (NuGet is blocked in the cloud sandbox).
+// Runs the same cases as tests/CarApp.Tests — there as xunit, at home for `dotnet test`.
 using CarApp.Obd;
 using CarApp.Obd.Pids;
 using CarApp.Obd.Transport;

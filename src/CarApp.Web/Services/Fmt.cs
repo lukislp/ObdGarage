@@ -4,12 +4,12 @@ using CarApp.Obd.Pids;
 
 namespace CarApp.Web.Services;
 
-/// <summary>Formatierung/Parsing-Helfer für die UI (deutsche Anzeige, robustes Form-Parsing).</summary>
+/// <summary>Formatting/parsing helpers for the UI (German display, robust form parsing).</summary>
 public static class Fmt
 {
     private static readonly CultureInfo De = new("de-DE");
 
-    /// <summary>Nachkommastellen pro PID-Key für die Anzeige.</summary>
+    /// <summary>Decimal places per PID key for display.</summary>
     public static int DecimalsFor(string pidKey) => pidKey switch
     {
         "module_voltage" => 1,
@@ -33,7 +33,7 @@ public static class Fmt
             ? $"{(int)span.TotalHours} h {span.Minutes:00} min"
             : $"{span.Minutes} min {span.Seconds:00} s";
 
-    /// <summary>Parst Zahlen aus Formularfeldern — akzeptiert Punkt und Komma.</summary>
+    /// <summary>Parses numbers from form fields — accepts both period and comma.</summary>
     public static double? ParseDouble(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))

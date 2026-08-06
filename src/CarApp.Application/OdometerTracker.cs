@@ -5,16 +5,16 @@ using CarApp.Obd.Pids;
 namespace CarApp.Application;
 
 /// <summary>
-/// Kilometerstand-Strategie (Plan 4.2): 1) Standard-PID A6, 2) manuell mit
-/// Plausibilitätsprüfung, 3) Fortschreibung über aufgezeichnete Fahrtdistanzen.
+/// Odometer strategy (Plan 4.2): 1) standard PID A6, 2) manual with
+/// plausibility check, 3) carry-forward via recorded trip distances.
 /// </summary>
 public sealed class OdometerTracker(
     IRepository<Vehicle> vehicles, IRepository<OdometerReading> readings, IClock clock)
 {
-    /// <summary>Maximal plausibler Sprung bei manueller Eingabe (Schutz vor Tippfehlern).</summary>
+    /// <summary>Maximum plausible jump for manual entry (protection against typos).</summary>
     public double MaxManualJumpKm { get; set; } = 15_000;
 
-    /// <summary>Versucht, den km-Stand per OBD (PID A6) zu lesen. Null, wenn nicht unterstützt.</summary>
+    /// <summary>Attempts to read the odometer via OBD (PID A6). Null if not supported.</summary>
     public async Task<double?> TryReadFromObdAsync(Elm327Client client, Vehicle vehicle, CancellationToken ct = default)
     {
         double km;
@@ -27,12 +27,12 @@ public sealed class OdometerTracker(
             return null;
         }
 
-        // OBD schlägt alles: Quelle hochstufen und speichern.
+        // OBD beats everything: upgrade the source and save.
         await RecordAsync(vehicle, km, OdometerSource.ObdStandardPid, ct).ConfigureAwait(false);
         return km;
     }
 
-    /// <summary>Manuelle Eingabe mit Plausibilitätsprüfung (kein Rückwärtslaufen, kein Riesensprung).</summary>
+    /// <summary>Manual entry with plausibility check (no running backwards, no huge jump).</summary>
     public async Task RecordManualAsync(Vehicle vehicle, double km, CancellationToken ct = default)
     {
         if (km < 0)
@@ -47,7 +47,7 @@ public sealed class OdometerTracker(
                     $"Sprung von {km - last:0.#} km wirkt unplausibel (max. {MaxManualJumpKm:0.#} km). Bitte prüfen.");
         }
 
-        // Manuelle Eingabe stuft eine OBD-Quelle nicht herab
+        // Manual entry does not downgrade an OBD source
         var source = vehicle.OdometerSource == OdometerSource.ObdStandardPid
             ? OdometerSource.ObdStandardPid
             : OdometerSource.Manual;
@@ -55,15 +55,15 @@ public sealed class OdometerTracker(
     }
 
     /// <summary>
-    /// Fortschreibung nach einer Fahrt (nur wenn das Auto kein OBD-Odometer liefert):
-    /// letzter Stand + gefahrene Distanz, Quelle "geschätzt".
+    /// Carry-forward after a trip (only if the car doesn't provide an OBD odometer):
+    /// last reading + distance driven, source "estimated".
     /// </summary>
     public async Task ApplyTripDistanceAsync(Vehicle vehicle, double distanceKm, CancellationToken ct = default)
     {
         if (vehicle.OdometerSource == OdometerSource.ObdStandardPid || distanceKm <= 0)
             return;
         if (vehicle.LastKnownOdometerKm is not { } last)
-            return; // ohne Basiswert keine Fortschreibung
+            return; // no baseline value, no carry-forward
 
         await RecordAsync(vehicle, last + distanceKm, OdometerSource.Estimated, ct).ConfigureAwait(false);
     }

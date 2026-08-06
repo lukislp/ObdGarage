@@ -5,9 +5,9 @@ using CarApp.Core;
 namespace CarApp.Web;
 
 /// <summary>
-/// Reine GET-Endpunkte, die kein Blazor-Komponenten-Rendering sind: Foto-Auslieferung
-/// und CSV-Export. Alle Mutationen laufen inzwischen als interaktive Blazor-Server-Methoden
-/// direkt in den jeweiligen Komponenten (siehe Components/Pages, Components/VehicleTabs).
+/// Pure GET endpoints that are not Blazor component rendering: photo delivery
+/// and CSV export. All mutations now run as interactive Blazor Server methods
+/// directly in the respective components (see Components/Pages, Components/VehicleTabs).
 /// </summary>
 public static class Endpoints
 {

@@ -81,7 +81,7 @@ else
 }
 
 @code {
-    /// <summary>Kacheln des Live-Dashboards (Reihenfolge = Anzeige).</summary>
+    /// <summary>Tiles of the live dashboard (order = display order).</summary>
     private static readonly PidDefinition[] LivePids =
     [
         StandardPids.Rpm,
@@ -141,7 +141,7 @@ else
 
         try
         {
-            // Adapterprofil merken (Vorbelegung beim nächsten Mal)
+            // Remember the adapter profile (pre-fill next time)
             var profile = (await Adapters.GetAllAsync())
                 .FirstOrDefault(a => a.VehicleId == Vehicle.Id && a.TransportType == AdapterTransportType.WifiTcp);
             profile ??= new AdapterProfile
@@ -197,7 +197,7 @@ else
         }
         catch (OperationCanceledException)
         {
-            // Beenden über Dispose()/StopPolling() — erwartet.
+            // Ends via Dispose()/StopPolling() — expected.
         }
     }
 

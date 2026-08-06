@@ -6,7 +6,7 @@ using CarApp.Obd.Transport;
 
 namespace CarApp.Web.Services;
 
-/// <summary>Momentaufnahme der Livedaten eines Fahrzeugs (für /api/live/{id} und die UI).</summary>
+/// <summary>Snapshot of a vehicle's live data (for /api/live/{id} and the UI).</summary>
 public sealed record LiveSnapshot(
     bool Connected,
     string? TransportLabel,
@@ -17,9 +17,9 @@ public sealed record LiveSnapshot(
     DateTimeOffset? TripStartedAt);
 
 /// <summary>
-/// Hält pro Fahrzeug die aktive OBD-Verbindung: Elm327Client + LiveDataService
-/// (Hintergrund-Polling) + TripRecorder (automatisches Fahrtenbuch) + CTS.
-/// Singleton — die interaktiven Blazor-Komponenten greifen hierüber zu.
+/// Holds the active OBD connection per vehicle: Elm327Client + LiveDataService
+/// (background polling) + TripRecorder (automatic trip logbook) + CTS.
+/// Singleton — the interactive Blazor components access it through here.
 /// </summary>
 public sealed class ConnectionManager(
     IRepository<Vehicle> vehicles,
@@ -55,7 +55,7 @@ public sealed class ConnectionManager(
         try
         {
             if (_connections.ContainsKey(vehicleId))
-                return; // bereits verbunden
+                return; // already connected
 
             var vehicle = await vehicles.GetAsync(vehicleId, ct)
                 ?? throw new InvalidOperationException("Fahrzeug nicht gefunden.");
@@ -67,7 +67,7 @@ public sealed class ConnectionManager(
 
                 string? vin = null;
                 try { vin = await client.ReadVinAsync(ct); }
-                catch (ObdErrorException) { /* Fahrzeug liefert keine VIN */ }
+                catch (ObdErrorException) { /* vehicle does not provide a VIN */ }
 
                 var supported = await client.GetSupportedPidsAsync(ct);
 
@@ -117,10 +117,10 @@ public sealed class ConnectionManager(
             return;
 
         conn.Cts.Cancel();
-        try { if (conn.PollTask is not null) await conn.PollTask; } catch { /* Abbruch */ }
-        try { if (conn.ProfileTask is not null) await conn.ProfileTask; } catch { /* Abbruch */ }
+        try { if (conn.PollTask is not null) await conn.PollTask; } catch { /* cancellation */ }
+        try { if (conn.ProfileTask is not null) await conn.ProfileTask; } catch { /* cancellation */ }
 
-        // Laufende Fahrt sauber beenden und km-Stand fortschreiben.
+        // Cleanly end an ongoing trip and update the odometer reading.
         var running = conn.Recorder.CurrentTrip;
         if (running is not null)
         {
@@ -144,7 +144,7 @@ public sealed class ConnectionManager(
             trip is not null, conn.Recorder.CurrentDistanceKm, trip?.StartedAt);
     }
 
-    /// <summary>km-Stand per OBD lesen (PID A6) — null, wenn nicht verbunden oder nicht unterstützt.</summary>
+    /// <summary>Read the odometer reading via OBD (PID A6) — null if not connected or not supported.</summary>
     public async Task<double?> ReadOdometerFromObdAsync(Guid vehicleId, CancellationToken ct = default)
     {
         if (!_connections.TryGetValue(vehicleId, out var conn))
@@ -155,7 +155,7 @@ public sealed class ConnectionManager(
         return await odometerTracker.TryReadFromObdAsync(conn.Client, vehicle, ct);
     }
 
-    /// <summary>Fahrt-Ende: km-Stand über die gefahrene Distanz fortschreiben (Quelle "geschätzt").</summary>
+    /// <summary>Trip end: update the odometer reading using the distance driven (source "estimated").</summary>
     private async Task OnTripEndedAsync(Guid vehicleId, Trip trip)
     {
         try
@@ -166,28 +166,28 @@ public sealed class ConnectionManager(
         }
         catch
         {
-            // Fortschreibung darf das Polling nie stoppen.
+            // Updating the odometer must never stop polling.
         }
     }
 
     /// <summary>
-    /// Kleines Fahrprofil für den Simulator: beschleunigen, Tempo halten (mit Rauschen),
-    /// abbremsen, kurze Standphase — damit im Live-Dashboard sichtbar etwas passiert.
+    /// Small drive profile for the simulator: accelerate, hold speed (with noise),
+    /// brake, brief idle phase — so something visibly happens on the live dashboard.
     /// </summary>
     private static async Task DriveProfileAsync(SimulatedCar car, CancellationToken ct)
     {
         var rnd = new Random();
         double t = 0;
-        const double cycle = 150; // Sekunden pro Fahrzyklus
+        const double cycle = 150; // seconds per drive cycle
 
         while (!ct.IsCancellationRequested)
         {
             var phase = t % cycle;
             double target;
-            if (phase < 25) target = phase / 25.0 * 70;                          // beschleunigen
-            else if (phase < 110) target = 70 + 25 * Math.Sin((phase - 25) / 12.0); // fahren
-            else if (phase < 125) target = Math.Max(0, 70 * (1 - (phase - 110) / 12.0)); // bremsen
-            else target = 0;                                                     // Stand
+            if (phase < 25) target = phase / 25.0 * 70;                          // accelerate
+            else if (phase < 110) target = 70 + 25 * Math.Sin((phase - 25) / 12.0); // driving
+            else if (phase < 125) target = Math.Max(0, 70 * (1 - (phase - 110) / 12.0)); // braking
+            else target = 0;                                                     // idle
 
             var speed = target <= 0 ? 0 : Math.Clamp(target + rnd.NextDouble() * 4 - 2, 0, 220);
             car.SpeedKmh = speed;
@@ -206,8 +206,8 @@ public sealed class ConnectionManager(
     }
 
     /// <summary>
-    /// Reicht Readings an den TripRecorder durch und erkennt den Übergang
-    /// "Fahrt läuft" → "Fahrt beendet" (Idle-Timeout), um den km-Stand fortzuschreiben.
+    /// Passes readings through to the TripRecorder and detects the transition
+    /// "trip active" → "trip ended" (idle timeout), to update the odometer reading.
     /// </summary>
     private sealed class TripEndTracker(TripRecorder inner, Func<Trip, Task> onTripEnded) : ITripTracker
     {
@@ -216,7 +216,7 @@ public sealed class ConnectionManager(
             var before = inner.CurrentTrip;
             var result = await inner.ProcessAsync(reading, ct);
             if (before is not null && inner.CurrentTrip is null)
-                await onTripEnded(before); // EndTripAsync hat Distanz/EndedAt bereits gesetzt
+                await onTripEnded(before); // EndTripAsync has already set Distance/EndedAt
             return result;
         }
     }

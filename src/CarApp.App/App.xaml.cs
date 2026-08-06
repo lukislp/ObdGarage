@@ -1,7 +1,7 @@
 namespace CarApp.App;
 
-// Achtung: "Application" absichtlich voll qualifiziert — im Projekt existiert der
-// Namespace CarApp.Application, der sonst die Namensauflösung stören würde.
+// Note: "Application" is deliberately fully qualified — the project has a
+// CarApp.Application namespace that would otherwise interfere with name resolution.
 public partial class App : Microsoft.Maui.Controls.Application
 {
     public App()

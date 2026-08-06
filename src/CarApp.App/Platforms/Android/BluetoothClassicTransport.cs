@@ -5,29 +5,29 @@ using CarApp.Obd.Transport;
 namespace CarApp.App.Services;
 
 /// <summary>
-/// IObdTransport über Bluetooth Classic (SPP/RFCOMM) — der Transport für die
-/// verbreiteten (Billig-)ELM327-Adapter. Nur Android; die Datei liegt unter
-/// Platforms/Android und wird dank SingleProject ausschließlich für
-/// net10.0-android kompiliert. iOS kann kein BT Classic (Plan 2.1) — dort
-/// bleiben WLAN (WifiTcpTransport) und später BLE (BleTransport).
+/// IObdTransport over Bluetooth Classic (SPP/RFCOMM) — the transport for the
+/// common (cheap) ELM327 adapters. Android only; the file lives under
+/// Platforms/Android and, thanks to SingleProject, is compiled exclusively for
+/// net10.0-android. iOS cannot do BT Classic (Plan 2.1) — there,
+/// WiFi (WifiTcpTransport) and later BLE (BleTransport) remain.
 ///
-/// Voraussetzungen beim Aufrufer:
-///  - Gerät ist im System bereits gekoppelt (Pairing über die Android-Einstellungen
-///    oder später über eine eigene Geräteliste in der App).
-///  - Laufzeit-Berechtigung BLUETOOTH_CONNECT wurde erteilt (ab Android 12), z.B. via
-///    Permissions.RequestAsync&lt;Permissions.Bluetooth&gt;() — sonst wirft Connect
-///    eine SecurityException.
+/// Prerequisites for the caller:
+///  - The device is already paired at the system level (pairing via Android settings
+///    or later via a dedicated device list in the app).
+///  - The BLUETOOTH_CONNECT runtime permission has been granted (from Android 12 on), e.g. via
+///    Permissions.RequestAsync&lt;Permissions.Bluetooth&gt;() — otherwise Connect throws
+///    a SecurityException.
 /// </summary>
 public sealed class BluetoothClassicTransport(string macAddress) : IObdTransport
 {
-    /// <summary>Wohlbekannte SPP-UUID (Serial Port Profile) — die sprechen alle ELM327-BT-Adapter.</summary>
+    /// <summary>Well-known SPP UUID (Serial Port Profile) — spoken by all ELM327 BT adapters.</summary>
     private static readonly Java.Util.UUID SppUuid =
         Java.Util.UUID.FromString("00001101-0000-1000-8000-00805F9B34FB")!;
 
     private BluetoothSocket? _socket;
     private Stream? _input;
     private Stream? _output;
-    private Java.IO.InputStream? _javaInput; // für Available() — nicht-blockierendes Polling
+    private Java.IO.InputStream? _javaInput; // for Available() — non-blocking polling
 
     public TimeSpan ConnectTimeout { get; set; } = TimeSpan.FromSeconds(15);
 
@@ -37,7 +37,7 @@ public sealed class BluetoothClassicTransport(string macAddress) : IObdTransport
     {
         await DisconnectAsync().ConfigureAwait(false);
 
-        // BluetoothManager statt des veralteten BluetoothAdapter.DefaultAdapter.
+        // BluetoothManager instead of the deprecated BluetoothAdapter.DefaultAdapter.
         var manager = (BluetoothManager?)Android.App.Application.Context
             .GetSystemService(Context.BluetoothService);
         var adapter = manager?.Adapter
@@ -56,22 +56,22 @@ public sealed class BluetoothClassicTransport(string macAddress) : IObdTransport
             throw new ArgumentException($"Ungültige Bluetooth-MAC-Adresse: '{macAddress}'.", nameof(macAddress), ex);
         }
 
-        // Laufende Discovery bremst RFCOMM-Verbindungen massiv — nach Möglichkeit abbrechen.
-        // Braucht ab Android 12 die BLUETOOTH_SCAN-Berechtigung; ohne sie nicht fatal.
+        // Ongoing discovery massively slows down RFCOMM connections — cancel it if possible.
+        // Requires the BLUETOOTH_SCAN permission from Android 12 on; not fatal without it.
         try { adapter.CancelDiscovery(); }
-        catch (Java.Lang.SecurityException) { /* Discovery läuft dann eben weiter */ }
+        catch (Java.Lang.SecurityException) { /* discovery just keeps running then */ }
 
         var socket = device.CreateRfcommSocketToServiceRecord(SppUuid)
             ?? throw new InvalidOperationException("RFCOMM-Socket konnte nicht erstellt werden.");
 
-        // socket.Connect() blockiert ohne eigenes Timeout — wir erzwingen eines,
-        // indem wir den Socket bei Ablauf/Abbruch schließen (bricht Connect ab).
+        // socket.Connect() blocks with no timeout of its own — we enforce one
+        // by closing the socket on expiry/cancellation (this aborts Connect).
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(ConnectTimeout);
         using var closeOnCancel = timeout.Token.Register(() =>
         {
             try { socket.Close(); }
-            catch { /* Socket war ggf. schon zu */ }
+            catch { /* socket may already have been closed */ }
         });
 
         try
@@ -80,7 +80,7 @@ public sealed class BluetoothClassicTransport(string macAddress) : IObdTransport
         }
         catch (Exception ex)
         {
-            try { socket.Close(); } catch { /* egal */ }
+            try { socket.Close(); } catch { /* doesn't matter */ }
             socket.Dispose();
 
             if (ct.IsCancellationRequested)
@@ -98,15 +98,15 @@ public sealed class BluetoothClassicTransport(string macAddress) : IObdTransport
             ?? throw new InvalidOperationException("Bluetooth-Socket liefert keinen InputStream.");
         _output = socket.OutputStream
             ?? throw new InvalidOperationException("Bluetooth-Socket liefert keinen OutputStream.");
-        // Java-Stream für Available(): erlaubt Lesen ohne blockierenden Thread.
+        // Java stream for Available(): allows reading without a blocking thread.
         _javaInput = (_input as Android.Runtime.InputStreamInvoker)?.BaseInputStream;
     }
 
     public Task DisconnectAsync()
     {
-        try { _input?.Dispose(); } catch { /* Aufräumen darf nie werfen */ }
-        try { _output?.Dispose(); } catch { /* dito */ }
-        try { _socket?.Close(); } catch { /* dito */ }
+        try { _input?.Dispose(); } catch { /* cleanup must never throw */ }
+        try { _output?.Dispose(); } catch { /* ditto */ }
+        try { _socket?.Close(); } catch { /* ditto */ }
         _socket?.Dispose();
         _socket = null;
         _input = null;
@@ -123,16 +123,16 @@ public sealed class BluetoothClassicTransport(string macAddress) : IObdTransport
     }
 
     /// <summary>
-    /// Liest verfügbare Bytes. Wichtig: Der Elm327Client cancelt ReadAsync bei jedem
-    /// Befehls-Timeout — deshalb darf ein Abbruch hier NICHT die Verbindung schließen.
-    /// Wir pollen daher Available() und lesen nur, wenn Daten anliegen; das Delay
-    /// dazwischen ist sauber abbrechbar. Rückgabe 0 = Verbindung geschlossen.
+    /// Reads available bytes. Important: Elm327Client cancels ReadAsync on every
+    /// command timeout — so a cancellation here must NOT close the connection.
+    /// We therefore poll Available() and only read when data is available; the delay
+    /// in between is cleanly cancellable. Return value 0 = connection closed.
     /// </summary>
     public async Task<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
     {
         var input = _input ?? throw new InvalidOperationException("Nicht verbunden.");
 
-        // Fallback ohne Java-Stream (sollte praktisch nie eintreten): blockierendes Lesen.
+        // Fallback without a Java stream (should practically never happen): blocking read.
         if (_javaInput is null)
             return await input.ReadAsync(buffer, ct).ConfigureAwait(false);
 
@@ -147,7 +147,7 @@ public sealed class BluetoothClassicTransport(string macAddress) : IObdTransport
             }
             catch (Java.IO.IOException)
             {
-                return 0; // Gegenstelle hat die Verbindung geschlossen
+                return 0; // remote end closed the connection
             }
 
             if (available > 0)

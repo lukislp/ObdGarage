@@ -3,8 +3,8 @@ using System.Net.Sockets;
 namespace CarApp.Obd.Transport;
 
 /// <summary>
-/// Transport für WLAN-OBD-Adapter (der Adapter spannt ein eigenes WLAN auf,
-/// typischer Endpunkt 192.168.0.10:35000). Läuft auf allen Plattformen.
+/// Transport for WiFi OBD adapters (the adapter opens its own WiFi network,
+/// typical endpoint 192.168.0.10:35000). Runs on all platforms.
 /// </summary>
 public sealed class WifiTcpTransport(string host, int port = 35000) : IObdTransport
 {

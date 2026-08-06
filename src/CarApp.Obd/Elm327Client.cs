@@ -6,14 +6,14 @@ using CarApp.Obd.Transport;
 
 namespace CarApp.Obd;
 
-/// <summary>Wird geworfen, wenn ein Befehl nicht auf der Nur-Lese-Whitelist steht.</summary>
+/// <summary>Thrown when a command is not on the read-only whitelist.</summary>
 public sealed class ObdCommandBlockedException(string command)
     : InvalidOperationException($"Befehl '{command}' ist nicht erlaubt (Nur-Lese-Whitelist).")
 {
     public string Command { get; } = command;
 }
 
-/// <summary>Wird geworfen, wenn der Adapter einen Fehler meldet oder keine Daten liefert.</summary>
+/// <summary>Thrown when the adapter reports an error or returns no data.</summary>
 public sealed class ObdErrorException(string command, string response)
     : Exception($"OBD-Fehler bei '{command}': {response}")
 {
@@ -22,23 +22,23 @@ public sealed class ObdErrorException(string command, string response)
 }
 
 /// <summary>
-/// ELM327-Protokoll-Client. Spricht über ein <see cref="IObdTransport"/> mit dem Adapter.
-/// Sicherheitsprinzip: Es gehen ausschließlich Befehle von der Nur-Lese-Whitelist raus —
-/// kein Fehlercode-Löschen (Mode 04), keine Schreibbefehle, keine UDS-Writes.
+/// ELM327 protocol client. Communicates with the adapter over an <see cref="IObdTransport"/>.
+/// Safety principle: only commands from the read-only whitelist are ever sent —
+/// no DTC clearing (mode 04), no write commands, no UDS writes.
 /// </summary>
 public sealed class Elm327Client(IObdTransport transport) : IAsyncDisposable
 {
     private static readonly Regex HexLine = new(@"^[0-9A-F]{2}(\s?[0-9A-F]{2})*$", RegexOptions.Compiled);
 
     /// <summary>
-    /// Erlaubte AT-Befehle (Adapter-Konfiguration, fahrzeugseitig wirkungslos).
-    /// Bewusst strikt: z.B. ist ATSH (Set Header) NICHT erlaubt.
+    /// Allowed AT commands (adapter configuration, has no effect on the vehicle side).
+    /// Deliberately strict: e.g. ATSH (Set Header) is NOT allowed.
     /// </summary>
     private static readonly Regex AllowedAtCommand = new(
         @"^AT(Z|I|RV|PC|DPN?|E[01]|L[01]|S[01]|H[01]|SP[0-9A-C]|AT[0-2]|ST[0-9A-F]{1,2})$",
         RegexOptions.Compiled);
 
-    /// <summary>Erlaubte OBD-Modi: 01 Livedaten, 02 Freeze Frame, 03/07 DTC lesen, 09 Fahrzeuginfo.</summary>
+    /// <summary>Allowed OBD modes: 01 live data, 02 freeze frame, 03/07 read DTCs, 09 vehicle info.</summary>
     private static readonly Regex AllowedObdRequest = new(@"^(01|02|03|07|09)([0-9A-F]{2}){0,2}$", RegexOptions.Compiled);
 
     private readonly SemaphoreSlim _ioLock = new(1, 1);
@@ -56,7 +56,7 @@ public sealed class Elm327Client(IObdTransport transport) : IAsyncDisposable
         return AllowedObdRequest.IsMatch(c);
     }
 
-    /// <summary>Standard-Initialisierung: Reset, Echo aus, Formatierung, Protokoll automatisch.</summary>
+    /// <summary>Standard initialization: reset, echo off, formatting, protocol automatic.</summary>
     public async Task InitializeAsync(CancellationToken ct = default)
     {
         if (!transport.IsConnected)
@@ -72,8 +72,8 @@ public sealed class Elm327Client(IObdTransport transport) : IAsyncDisposable
     }
 
     /// <summary>
-    /// Sendet einen Befehl (nach Whitelist-Prüfung) und liefert die Rohantwort
-    /// bis zum Prompt '&gt;' — bereinigt um Echo und Leerzeilen.
+    /// Sends a command (after whitelist check) and returns the raw response
+    /// up to the '&gt;' prompt — cleaned of echo and blank lines.
     /// </summary>
     public async Task<string> SendRawAsync(string command, CancellationToken ct = default)
     {
@@ -94,7 +94,7 @@ public sealed class Elm327Client(IObdTransport transport) : IAsyncDisposable
         }
     }
 
-    /// <summary>Fragt einen PID ab und liefert den dekodierten physikalischen Wert.</summary>
+    /// <summary>Queries a PID and returns the decoded physical value.</summary>
     public async Task<double> ReadPidAsync(PidDefinition pid, CancellationToken ct = default)
     {
         var payload = await QueryAsync(pid.RequestCommand, ct).ConfigureAwait(false);
@@ -103,7 +103,7 @@ public sealed class Elm327Client(IObdTransport transport) : IAsyncDisposable
         return pid.Decode(payload);
     }
 
-    /// <summary>Ermittelt alle vom Fahrzeug unterstützten Mode-01-PIDs (0100, 0120, …).</summary>
+    /// <summary>Determines all mode-01 PIDs supported by the vehicle (0100, 0120, …).</summary>
     public async Task<IReadOnlySet<byte>> GetSupportedPidsAsync(CancellationToken ct = default)
     {
         var supported = new HashSet<byte>();
@@ -116,32 +116,32 @@ public sealed class Elm327Client(IObdTransport transport) : IAsyncDisposable
             }
             catch (ObdErrorException)
             {
-                break; // Bereich nicht unterstützt → fertig
+                break; // Range not supported → done
             }
 
             foreach (var pid in StandardPids.DecodeSupportedPidMask(range, mask))
                 supported.Add(pid);
 
-            // Letztes Bit der Maske zeigt an, ob der nächste Bereich existiert.
+            // Last bit of the mask indicates whether the next range exists.
             if (mask.Length < 4 || (mask[3] & 0x01) == 0 || range >= 0xC0)
                 break;
         }
         return supported;
     }
 
-    /// <summary>Liest die Fahrgestellnummer (Mode 09, PID 02) — Basis der Fahrzeug-Autoerkennung.</summary>
+    /// <summary>Reads the vehicle identification number (mode 09, PID 02) — basis for automatic vehicle detection.</summary>
     public async Task<string?> ReadVinAsync(CancellationToken ct = default)
     {
         var response = await SendRawAsync("0902", ct).ConfigureAwait(false);
         var bytes = ExtractHexBytes(response);
 
-        // Nach der Kennung 49 02 <Sequenz> stehen die ASCII-Bytes der VIN.
+        // After the identifier 49 02 <sequence> come the ASCII bytes of the VIN.
         var ascii = new StringBuilder();
         for (int i = 0; i < bytes.Count; i++)
         {
             if (i + 1 < bytes.Count && bytes[i] == 0x49 && bytes[i + 1] == 0x02)
             {
-                i += 2; // Kennung und Sequenzzähler überspringen
+                i += 2; // Skip identifier and sequence counter
                 continue;
             }
             if (bytes[i] is >= 0x20 and < 0x7F)
@@ -152,7 +152,7 @@ public sealed class Elm327Client(IObdTransport transport) : IAsyncDisposable
         return candidate.Length >= 17 ? candidate[^17..] : null;
     }
 
-    /// <summary>Batteriespannung direkt vom Adapter (ATRV), funktioniert auch bei Zündung aus.</summary>
+    /// <summary>Battery voltage directly from the adapter (ATRV), works even with ignition off.</summary>
     public async Task<double?> ReadAdapterVoltageAsync(CancellationToken ct = default)
     {
         var response = await SendRawAsync("ATRV", ct).ConfigureAwait(false);
@@ -161,8 +161,8 @@ public sealed class Elm327Client(IObdTransport transport) : IAsyncDisposable
     }
 
     /// <summary>
-    /// Sendet eine OBD-Anfrage (z.B. "010C") und liefert die Payload-Bytes
-    /// nach Modus-Echo (0x40 + Mode) und PID.
+    /// Sends an OBD request (e.g. "010C") and returns the payload bytes
+    /// after the mode echo (0x40 + mode) and PID.
     /// </summary>
     public async Task<byte[]> QueryAsync(string request, CancellationToken ct = default)
     {
@@ -239,9 +239,9 @@ public sealed class Elm327Client(IObdTransport transport) : IAsyncDisposable
         var bytes = new List<byte>();
         foreach (var line in text.Split('\n'))
         {
-            // Zeilenpräfixe von Multi-Frame-Antworten entfernen ("0:", "1:", …)
+            // Remove line prefixes from multi-frame responses ("0:", "1:", …)
             var content = Regex.Replace(line.Trim(), @"^[0-9A-F]{1,3}:", "");
-            // ISO-TP-Längenzeilen wie "014" (3 Hex-Zeichen allein) überspringen
+            // Skip ISO-TP length lines like "014" (3 hex characters alone)
             var compact = content.Replace(" ", "");
             if (compact.Length % 2 != 0)
                 continue;

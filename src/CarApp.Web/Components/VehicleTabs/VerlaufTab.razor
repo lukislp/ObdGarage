@@ -76,7 +76,7 @@
             return;
         _initialized = true;
 
-        // Nur PIDs anbieten, die das Fahrzeug laut Scan unterstützt (Fallback: alle)
+        // Only offer PIDs that the vehicle supports according to the scan (fallback: all)
         _availablePids = Vehicle.SupportedPids.Count > 0
             ? StandardPids.All.Where(p => Vehicle.SupportedPids.Contains(p.Pid)).ToList()
             : StandardPids.All.ToList();

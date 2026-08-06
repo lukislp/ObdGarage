@@ -3,12 +3,12 @@
 @using Microsoft.Maui.Storage
 
 @*
-    Platzhalter-Startseite der MAUI-App.
-    Die "echten" Seiten (Dashboard, Fahrzeuge, Fahrten, Wartung) liegen aktuell in
-    CarApp.Web/Components und wandern in einem späteren Schritt in eine gemeinsame
-    Razor Class Library (CarApp.UI) — Anleitung: docs/MAUI-SETUP.md.
-    Bis dahin: einfacher Verbindungstest (Simulator + WLAN-Adapter), um die
-    OBD-Schicht auf dem Gerät End-to-End zu prüfen.
+    Placeholder start page of the MAUI app.
+    The "real" pages (dashboard, vehicles, trips, maintenance) currently live in
+    CarApp.Web/Components and will move in a later step into a shared
+    Razor Class Library (CarApp.UI) — instructions: docs/MAUI-SETUP.md.
+    Until then: a simple connection test (simulator + WiFi adapter) to
+    verify the OBD layer on the device end-to-end.
 *@
 
 <div class="page">
@@ -74,7 +74,7 @@
         await RunTestAsync(new WifiTcpTransport(_host.Trim(), port), $"WLAN {_host.Trim()}:{port}");
     }
 
-    /// <summary>Initialisiert den Adapter, liest Spannung + unterstützte PIDs und räumt sauber auf.</summary>
+    /// <summary>Initializes the adapter, reads voltage + supported PIDs, and cleans up properly.</summary>
     private async Task RunTestAsync(IObdTransport transport, string label)
     {
         _busy = true;
