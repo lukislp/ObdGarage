@@ -22,6 +22,8 @@
     <ProjectReference Include="..\..\src\CarApp.Core\CarApp.Core.csproj" />
     <ProjectReference Include="..\..\src\CarApp.Obd\CarApp.Obd.csproj" />
     <ProjectReference Include="..\..\src\CarApp.Application\CarApp.Application.csproj" />
+    <ProjectReference Include="..\..\src\CarApp.Data\CarApp.Data.csproj" />
+    <ProjectReference Include="..\..\src\CarApp.Web\CarApp.Web.csproj" />
   </ItemGroup>
 
 </Project>

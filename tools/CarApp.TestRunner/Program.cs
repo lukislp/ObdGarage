@@ -111,6 +111,7 @@ Console.WriteLine("Client-Integration (ReplayTransport):");
 
 await CarApp.TestRunner.E2ETests.RunAsync(Check, (n, e, a, t) => CheckEqual(n, e, a, t));
 await CarApp.TestRunner.SyncTests.RunAsync(Check);
+await CarApp.TestRunner.SecurityTests.RunAsync(Check);
 
 Console.WriteLine($"\n{passed} bestanden, {failures} fehlgeschlagen.");
 return failures == 0 ? 0 : 1;
