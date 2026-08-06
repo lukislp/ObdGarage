@@ -95,9 +95,21 @@ public sealed class JsonlObdSampleStore(string directory) : IObdSampleStore
         {
             if (string.IsNullOrWhiteSpace(line))
                 continue;
-            var s = JsonSerializer.Deserialize<ObdSample>(line, JsonOptions);
-            if (s is not null)
-                samples.Add(s);
+            // A process kill mid-append (power loss, container OOM) can leave a torn
+            // trailing line. Without this guard, one bad line throws and takes down the
+            // entire vehicle's history (query, compaction, chart) instead of just that
+            // one sample - skip it and keep the rest, which is the strictly better outcome
+            // for an append-only log like this.
+            try
+            {
+                var s = JsonSerializer.Deserialize<ObdSample>(line, JsonOptions);
+                if (s is not null)
+                    samples.Add(s);
+            }
+            catch (JsonException)
+            {
+                // Skip the corrupt line.
+            }
         }
         return samples;
     }
