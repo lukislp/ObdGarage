@@ -4,13 +4,14 @@ using System.Text;
 using CarApp.Core;
 using CarApp.Data;
 using CarApp.Shared;
+using Microsoft.EntityFrameworkCore;
 
 namespace CarApp.Server;
 
 /// <summary>
-/// Builds the complete server app (auth, sync, samples) on top of the JSON persistence
-/// from CarApp.Data. Kept as its own method so tests can start the server in-process —
-/// Program.cs just calls BuildApp(args).Run().
+/// Builds the complete server app (auth, sync, samples) on top of the EF Core/SQLite
+/// persistence from CarApp.Data. Kept as its own method so tests can start the server in-process
+/// — Program.cs just calls BuildApp(args).Run().
 /// </summary>
 public static class ServerApp
 {
@@ -27,16 +28,31 @@ public static class ServerApp
         var tokens = new TokenStore(Path.Combine(dataDir, "tokens.json"));
         var clock = new SystemClock();
 
-        var vehicles = new JsonFileRepository<Vehicle>(dataDir);
-        var adapterProfiles = new JsonFileRepository<AdapterProfile>(dataDir);
-        var odometerReadings = new JsonFileRepository<OdometerReading>(dataDir);
-        var trips = new JsonFileRepository<Trip>(dataDir);
-        var maintenanceTasks = new JsonFileRepository<MaintenanceTask>(dataDir);
-        var fuelEntries = new JsonFileRepository<FuelEntry>(dataDir);
-        var expenses = new JsonFileRepository<Expense>(dataDir);
-        var samples = new JsonlObdSampleStore(dataDir);
+        var dbPath = Path.Combine(dataDir, "carapp.db");
+        builder.Services.AddSingleton<IDbContextFactory<CarAppDbContext>>(new SqliteDbContextFactory(dbPath));
 
         var app = builder.Build();
+
+        // Apply pending migrations (creates the SQLite file + schema on the very first run),
+        // then import any pre-existing per-entity JSON data from before the EF Core/SQLite
+        // switch (see JsonToSqliteImporter) - a no-op on every run after the first for a given
+        // dataDir. BuildApp itself isn't async (Program.cs/tests call it synchronously), so this
+        // blocks at startup - safe here since nothing is serving requests yet.
+        var dbWasCreatedFresh = !File.Exists(dbPath);
+        var dbFactory = app.Services.GetRequiredService<IDbContextFactory<CarAppDbContext>>();
+        using (var migrationDb = dbFactory.CreateDbContext())
+            migrationDb.Database.Migrate();
+        JsonToSqliteImporter.ImportIfNeededAsync(dataDir, dbWasCreatedFresh, dbFactory)
+            .GetAwaiter().GetResult();
+
+        var vehicles = new EfSyncRepository<Vehicle>(dbFactory);
+        var adapterProfiles = new EfSyncRepository<AdapterProfile>(dbFactory);
+        var odometerReadings = new EfSyncRepository<OdometerReading>(dbFactory);
+        var trips = new EfSyncRepository<Trip>(dbFactory);
+        var maintenanceTasks = new EfSyncRepository<MaintenanceTask>(dbFactory);
+        var fuelEntries = new EfSyncRepository<FuelEntry>(dbFactory);
+        var expenses = new EfSyncRepository<Expense>(dbFactory);
+        var samples = new EfObdSampleStore(dbFactory);
 
         app.MapGet("/api/v1/health", () => Results.Ok(new { status = "ok" }));
 

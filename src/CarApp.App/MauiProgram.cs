@@ -2,6 +2,7 @@ using System.Globalization;
 using CarApp.Application;
 using CarApp.Core;
 using CarApp.Data;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui.Controls.Hosting;
 using Microsoft.Maui.Hosting;
@@ -46,15 +47,18 @@ public static class MauiProgram
         var dataDir = FileSystem.AppDataDirectory;
         Directory.CreateDirectory(Path.Combine(dataDir, "photos"));
 
+        var dbPath = Path.Combine(dataDir, "carapp.db");
+        builder.Services.AddSingleton<IDbContextFactory<CarAppDbContext>>(new SqliteDbContextFactory(dbPath));
+
         builder.Services.AddSingleton<IClock, SystemClock>();
-        RegisterRepository<Vehicle>(builder.Services, dataDir);
-        RegisterRepository<AdapterProfile>(builder.Services, dataDir);
-        RegisterRepository<OdometerReading>(builder.Services, dataDir);
-        RegisterRepository<Trip>(builder.Services, dataDir);
-        RegisterRepository<MaintenanceTask>(builder.Services, dataDir);
-        RegisterRepository<FuelEntry>(builder.Services, dataDir);
-        RegisterRepository<Expense>(builder.Services, dataDir);
-        builder.Services.AddSingleton<IObdSampleStore>(new JsonlObdSampleStore(dataDir));
+        RegisterRepository<Vehicle>(builder.Services);
+        RegisterRepository<AdapterProfile>(builder.Services);
+        RegisterRepository<OdometerReading>(builder.Services);
+        RegisterRepository<Trip>(builder.Services);
+        RegisterRepository<MaintenanceTask>(builder.Services);
+        RegisterRepository<FuelEntry>(builder.Services);
+        RegisterRepository<Expense>(builder.Services);
+        builder.Services.AddSingleton<IObdSampleStore, EfObdSampleStore>();
 
         builder.Services.AddSingleton<OdometerTracker>();
 
@@ -85,14 +89,27 @@ public static class MauiProgram
         // Until then, Components/Main.razor serves as a placeholder start page with
         // a connection test (simulator + WiFi adapter).
 
-        return builder.Build();
+        var app = builder.Build();
+
+        // Apply pending migrations (creates the SQLite file + schema on the very first run),
+        // then import any pre-existing per-entity JSON data from before the EF Core/SQLite
+        // switch (see JsonToSqliteImporter) - a no-op on every run after the first. Blocks
+        // briefly at startup - CreateMauiApp itself isn't async, and nothing needs the data
+        // layer before this returns anyway.
+        var dbWasCreatedFresh = !File.Exists(dbPath);
+        var dbFactory = app.Services.GetRequiredService<IDbContextFactory<CarAppDbContext>>();
+        using (var migrationDb = dbFactory.CreateDbContext())
+            migrationDb.Database.Migrate();
+        JsonToSqliteImporter.ImportIfNeededAsync(dataDir, dbWasCreatedFresh, dbFactory)
+            .GetAwaiter().GetResult();
+
+        return app;
     }
 
-    /// <summary>One JSON file per entity — registered as both IRepository AND ISyncRepository (as in the web app).</summary>
-    private static void RegisterRepository<T>(IServiceCollection services, string dataDir) where T : SyncEntity
+    /// <summary>Registers the same EF Core/SQLite-backed repository as both IRepository AND ISyncRepository.</summary>
+    private static void RegisterRepository<T>(IServiceCollection services) where T : SyncEntity
     {
-        var repo = new JsonFileRepository<T>(dataDir);
-        services.AddSingleton<IRepository<T>>(repo);
-        services.AddSingleton<ISyncRepository<T>>(repo);
+        services.AddSingleton<IRepository<T>, EfSyncRepository<T>>();
+        services.AddSingleton<ISyncRepository<T>, EfSyncRepository<T>>();
     }
 }

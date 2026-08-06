@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.EntityFrameworkCore;
 using CarApp.Application;
 using CarApp.Core;
 using CarApp.Data;
@@ -33,16 +34,19 @@ Directory.CreateDirectory(photosDir);
 builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDir, "dataprotection-keys")));
 
+var dbPath = Path.Combine(dataDir, "carapp.db");
+builder.Services.AddSingleton<IDbContextFactory<CarAppDbContext>>(new SqliteDbContextFactory(dbPath));
+
 builder.Services.AddSingleton(new PhotoStorage(photosDir));
 builder.Services.AddSingleton<IClock, SystemClock>();
-RegisterRepository<Vehicle>(builder.Services, dataDir);
-RegisterRepository<AdapterProfile>(builder.Services, dataDir);
-RegisterRepository<OdometerReading>(builder.Services, dataDir);
-RegisterRepository<Trip>(builder.Services, dataDir);
-RegisterRepository<MaintenanceTask>(builder.Services, dataDir);
-RegisterRepository<FuelEntry>(builder.Services, dataDir);
-RegisterRepository<Expense>(builder.Services, dataDir);
-builder.Services.AddSingleton<IObdSampleStore>(new JsonlObdSampleStore(dataDir));
+RegisterRepository<Vehicle>(builder.Services);
+RegisterRepository<AdapterProfile>(builder.Services);
+RegisterRepository<OdometerReading>(builder.Services);
+RegisterRepository<Trip>(builder.Services);
+RegisterRepository<MaintenanceTask>(builder.Services);
+RegisterRepository<FuelEntry>(builder.Services);
+RegisterRepository<Expense>(builder.Services);
+builder.Services.AddSingleton<IObdSampleStore, EfObdSampleStore>();
 
 // AppState/SyncManager hold which sync account is "logged in" and gate which vehicles a
 // browser sees (Home.razor filters by State.CurrentUserId). This app has no other notion
@@ -70,6 +74,15 @@ builder.Services.AddScoped(sp => new SyncManager(
 
 var app = builder.Build();
 
+// Apply pending migrations (creates the SQLite file + schema on the very first run), then
+// import any pre-existing per-entity JSON data from before the EF Core/SQLite switch (see
+// JsonToSqliteImporter) - a no-op on every run after the first for a given dataDir.
+var dbWasCreatedFresh = !File.Exists(dbPath);
+var dbFactory = app.Services.GetRequiredService<IDbContextFactory<CarAppDbContext>>();
+await using (var db = await dbFactory.CreateDbContextAsync())
+    await db.Database.MigrateAsync();
+await JsonToSqliteImporter.ImportIfNeededAsync(dataDir, dbWasCreatedFresh, dbFactory);
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -85,10 +98,9 @@ app.MapCarAppEndpoints(photosDir);
 
 app.Run();
 
-/// <summary>One JSON file per entity — registered as both IRepository AND ISyncRepository.</summary>
-static void RegisterRepository<T>(IServiceCollection services, string dataDir) where T : SyncEntity
+/// <summary>Registers the same EF Core/SQLite-backed repository as both IRepository AND ISyncRepository.</summary>
+static void RegisterRepository<T>(IServiceCollection services) where T : SyncEntity
 {
-    var repo = new JsonFileRepository<T>(dataDir);
-    services.AddSingleton<IRepository<T>>(repo);
-    services.AddSingleton<ISyncRepository<T>>(repo);
+    services.AddSingleton<IRepository<T>, EfSyncRepository<T>>();
+    services.AddSingleton<ISyncRepository<T>, EfSyncRepository<T>>();
 }

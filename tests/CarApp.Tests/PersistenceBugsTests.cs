@@ -2,6 +2,8 @@ using System.Text.Json;
 using CarApp.Core;
 using CarApp.Data;
 using CarApp.Web.Services;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 
 namespace CarApp.Tests;
 
@@ -76,15 +78,19 @@ public class SyncManagerBugTests
 {
     private static SyncManager NewManager(string dataDir, AppState? state = null)
     {
+        var dbFactory = new SqliteDbContextFactory(Path.Combine(dataDir, "carapp.db"));
+        using (var migrationDb = dbFactory.CreateDbContext())
+            migrationDb.Database.Migrate(); // idempotent - safe to call again for a "restart"
+
         return new SyncManager(
-            new JsonFileRepository<Vehicle>(dataDir),
-            new JsonFileRepository<AdapterProfile>(dataDir),
-            new JsonFileRepository<OdometerReading>(dataDir),
-            new JsonFileRepository<Trip>(dataDir),
-            new JsonFileRepository<MaintenanceTask>(dataDir),
-            new JsonFileRepository<FuelEntry>(dataDir),
-            new JsonFileRepository<Expense>(dataDir),
-            new JsonlObdSampleStore(dataDir),
+            new EfSyncRepository<Vehicle>(dbFactory),
+            new EfSyncRepository<AdapterProfile>(dbFactory),
+            new EfSyncRepository<OdometerReading>(dbFactory),
+            new EfSyncRepository<Trip>(dbFactory),
+            new EfSyncRepository<MaintenanceTask>(dbFactory),
+            new EfSyncRepository<FuelEntry>(dbFactory),
+            new EfSyncRepository<Expense>(dbFactory),
+            new EfObdSampleStore(dbFactory),
             new FakeClock2(DateTimeOffset.UtcNow),
             state ?? new AppState(),
             dataDir);
@@ -134,6 +140,9 @@ public class SyncManagerBugTests
         }
         finally
         {
+            // SqliteConnection pools its underlying OS file handle by default - without
+            // clearing the pool first, the directory delete below fails with "file in use".
+            SqliteConnection.ClearAllPools();
             try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
         }
     }
@@ -175,6 +184,7 @@ public class SyncManagerBugTests
         }
         finally
         {
+            SqliteConnection.ClearAllPools();
             try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
         }
     }

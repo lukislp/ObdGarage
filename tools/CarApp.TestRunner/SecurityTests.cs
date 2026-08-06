@@ -4,6 +4,8 @@ using CarApp.Core;
 using CarApp.Data;
 using CarApp.Server;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 
 namespace CarApp.TestRunner;
 
@@ -96,18 +98,22 @@ public static class SecurityTests
 
         try
         {
+            var dbFactory = new SqliteDbContextFactory(Path.Combine(clientDir, "carapp.db"));
+            using (var migrationDb = dbFactory.CreateDbContext())
+                migrationDb.Database.Migrate();
+
             var http = new HttpClient { BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/") };
-            var vehicles = new JsonFileRepository<Vehicle>(clientDir);
-            var trips = new JsonFileRepository<Trip>(clientDir);
+            var vehicles = new EfSyncRepository<Vehicle>(dbFactory);
+            var trips = new EfSyncRepository<Trip>(dbFactory);
             var sync = new SyncService(
                 http,
                 vehicles,
-                new JsonFileRepository<AdapterProfile>(clientDir),
-                new JsonFileRepository<OdometerReading>(clientDir),
+                new EfSyncRepository<AdapterProfile>(dbFactory),
+                new EfSyncRepository<OdometerReading>(dbFactory),
                 trips,
-                new JsonFileRepository<MaintenanceTask>(clientDir),
-                new JsonFileRepository<FuelEntry>(clientDir),
-                new JsonFileRepository<Expense>(clientDir),
+                new EfSyncRepository<MaintenanceTask>(dbFactory),
+                new EfSyncRepository<FuelEntry>(dbFactory),
+                new EfSyncRepository<Expense>(dbFactory),
                 sampleStore: null,
                 new SystemClock(),
                 Path.Combine(clientDir, "syncstate.json"));
@@ -160,17 +166,21 @@ public static class SecurityTests
             // same user pulls everything and should now see both the vehicle and the trip.
             var clientDir2 = Path.Combine(Path.GetTempPath(), "carapp-client-sec2-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(clientDir2);
+            var dbFactory2 = new SqliteDbContextFactory(Path.Combine(clientDir2, "carapp.db"));
+            using (var migrationDb2 = dbFactory2.CreateDbContext())
+                migrationDb2.Database.Migrate();
+
             var http2 = new HttpClient { BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/") };
-            var trips2 = new JsonFileRepository<Trip>(clientDir2);
+            var trips2 = new EfSyncRepository<Trip>(dbFactory2);
             var sync2 = new SyncService(
                 http2,
-                new JsonFileRepository<Vehicle>(clientDir2),
-                new JsonFileRepository<AdapterProfile>(clientDir2),
-                new JsonFileRepository<OdometerReading>(clientDir2),
+                new EfSyncRepository<Vehicle>(dbFactory2),
+                new EfSyncRepository<AdapterProfile>(dbFactory2),
+                new EfSyncRepository<OdometerReading>(dbFactory2),
                 trips2,
-                new JsonFileRepository<MaintenanceTask>(clientDir2),
-                new JsonFileRepository<FuelEntry>(clientDir2),
-                new JsonFileRepository<Expense>(clientDir2),
+                new EfSyncRepository<MaintenanceTask>(dbFactory2),
+                new EfSyncRepository<FuelEntry>(dbFactory2),
+                new EfSyncRepository<Expense>(dbFactory2),
                 sampleStore: null,
                 new SystemClock(),
                 Path.Combine(clientDir2, "syncstate.json"));
@@ -179,12 +189,16 @@ public static class SecurityTests
             check("Bestaetigung: Trip ist jetzt auf dem Server gelandet (kein Datenverlust)",
                 (await trips2.GetAllIncludingDeletedAsync()).Any(t => t.Id == orphanTrip.Id));
 
+            // SqliteConnection pools its underlying OS file handle by default - without
+            // clearing the pool first, the directory deletes below fail with "file in use".
+            SqliteConnection.ClearAllPools();
             try { Directory.Delete(clientDir2, recursive: true); } catch (IOException) { }
         }
         finally
         {
             await app.StopAsync();
             await app.DisposeAsync();
+            SqliteConnection.ClearAllPools();
             try { Directory.Delete(serverDir, recursive: true); } catch (IOException) { }
             try { Directory.Delete(clientDir, recursive: true); } catch (IOException) { }
         }
