@@ -14,8 +14,8 @@ CultureInfo.DefaultThreadCurrentUICulture = culture;
 var builder = WebApplication.CreateBuilder(args);
 
 // Needed so framework assets (_framework/blazor.web.js) are served even without "dotnet publish"
-// and outside of ASPNETCORE_ENVIRONMENT=Development (the default start
-// per CLAUDE.md runs without an environment variable, i.e. in Production mode).
+// and outside of ASPNETCORE_ENVIRONMENT=Development (running via `dotnet run` without setting
+// that variable defaults to Production mode).
 builder.WebHost.UseStaticWebAssets();
 
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
