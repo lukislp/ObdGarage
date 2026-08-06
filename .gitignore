@@ -2,7 +2,7 @@
 bin/
 obj/
 
-## Laufzeitdaten (JSON-Persistenz, pro Installation) — siehe CLAUDE.md "Bekannte Eigenheiten"
+## Runtime data (JSON persistence, per installation)
 src/CarApp.Web/data/
 src/CarApp.Server/data/
 
@@ -14,3 +14,6 @@ src/CarApp.Server/data/
 ## OS
 Thumbs.db
 .DS_Store
+
+## Local AI-assistant project notes - never tracked/pushed to public repos
+CLAUDE.md
