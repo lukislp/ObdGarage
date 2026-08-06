@@ -136,12 +136,30 @@ else
             if (ext is ".jpg" or ".jpeg" or ".png" or ".webp")
             {
                 Directory.CreateDirectory(Photos.Directory);
-                foreach (var old in Directory.EnumerateFiles(Photos.Directory, vehicle.Id.ToString("N") + ".*"))
-                    File.Delete(old);
-                var path = Path.Combine(Photos.Directory, vehicle.Id.ToString("N") + ext);
-                await using var stream = File.Create(path);
-                await photo.OpenReadStream(10 * 1024 * 1024).CopyToAsync(stream);
-                vehicle.PhotoPath = Path.GetFileName(path);
+                var finalPath = Path.Combine(Photos.Directory, vehicle.Id.ToString("N") + ext);
+                // Named so it can never collide with the "{id}.*" glob below (which would
+                // otherwise delete this very file out from under itself before the Move).
+                var tmpPath = Path.Combine(Photos.Directory, $"{vehicle.Id:N}-{Guid.NewGuid():N}{ext}.tmp");
+                try
+                {
+                    await using (var stream = File.Create(tmpPath))
+                        await photo.OpenReadStream(10 * 1024 * 1024).CopyToAsync(stream);
+
+                    // Only remove the old photo(s) once the new one is fully and successfully
+                    // written - otherwise a failed/oversized upload (OpenReadStream throws
+                    // past the 10 MB cap) would delete the existing photo and leave the
+                    // vehicle with none at all instead of keeping the old one.
+                    foreach (var old in Directory.EnumerateFiles(Photos.Directory, vehicle.Id.ToString("N") + ".*"))
+                        File.Delete(old);
+                    File.Move(tmpPath, finalPath);
+                    vehicle.PhotoPath = Path.GetFileName(finalPath);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    try { File.Delete(tmpPath); } catch (IOException) { /* best-effort cleanup */ }
+                    _error = $"Foto konnte nicht gespeichert werden: {ex.Message}";
+                    return;
+                }
             }
         }
 
@@ -161,6 +179,15 @@ else
         if (!await JS.InvokeAsync<bool>("confirm", "Fahrzeug wirklich löschen?"))
             return;
         await Vehicles.DeleteAsync(Id!.Value);
+
+        // The vehicle record is only soft-deleted (IsDeleted flag, for sync tombstones), but
+        // its photo file has no such lifecycle of its own - without this it stays on disk
+        // forever, an orphan no code path will ever reference or clean up again.
+        foreach (var old in Directory.EnumerateFiles(Photos.Directory, Id!.Value.ToString("N") + ".*"))
+        {
+            try { File.Delete(old); } catch (IOException) { /* best-effort cleanup */ }
+        }
+
         Nav.NavigateTo("/");
     }
 

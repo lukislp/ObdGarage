@@ -60,17 +60,30 @@ public static class SvgChart
             sb.Append("</text>");
         }
 
-        // x-axis labels (4 time marks)
+        // x-axis labels (4 time marks). A single sample has no real span to spread them
+        // across - tMin == tMax clamps spanTicks to the Math.Max(1, ...) fallback above, and
+        // integer division (spanTicks * i / xLabels) then collapses 4 of the 5 marks onto the
+        // exact same x position - so show one centered label instead of 5 overlapping ones.
         var multiDay = (tMax - tMin) > TimeSpan.FromHours(24);
-        const int xLabels = 4;
-        for (int i = 0; i <= xLabels; i++)
+        if (samples.Count == 1)
         {
-            var t = tMin + TimeSpan.FromTicks(spanTicks * i / xLabels);
-            var x = X(t);
+            var x = (Width + PadLeft - PadRight) / 2.0;
             sb.Append($"<line class=\"chart-grid\" x1=\"{N(x)}\" y1=\"{PadTop}\" x2=\"{N(x)}\" y2=\"{Height - PadBottom}\"/>");
-            var label = t.ToLocalTime().ToString(multiDay ? "dd.MM. HH:mm" : "HH:mm", de);
-            var anchor = i == 0 ? "start" : i == xLabels ? "end" : "middle";
-            sb.Append($"<text class=\"chart-label\" x=\"{N(x)}\" y=\"{Height - PadBottom + 18}\" text-anchor=\"{anchor}\">{label}</text>");
+            var label = tMin.ToLocalTime().ToString("HH:mm", de);
+            sb.Append($"<text class=\"chart-label\" x=\"{N(x)}\" y=\"{Height - PadBottom + 18}\" text-anchor=\"middle\">{label}</text>");
+        }
+        else
+        {
+            const int xLabels = 4;
+            for (int i = 0; i <= xLabels; i++)
+            {
+                var t = tMin + TimeSpan.FromTicks(spanTicks * i / xLabels);
+                var x = X(t);
+                sb.Append($"<line class=\"chart-grid\" x1=\"{N(x)}\" y1=\"{PadTop}\" x2=\"{N(x)}\" y2=\"{Height - PadBottom}\"/>");
+                var label = t.ToLocalTime().ToString(multiDay ? "dd.MM. HH:mm" : "HH:mm", de);
+                var anchor = i == 0 ? "start" : i == xLabels ? "end" : "middle";
+                sb.Append($"<text class=\"chart-label\" x=\"{N(x)}\" y=\"{Height - PadBottom + 18}\" text-anchor=\"{anchor}\">{label}</text>");
+            }
         }
 
         // Min/max band (only when aggregated samples are present)
