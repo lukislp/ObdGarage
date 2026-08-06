@@ -156,9 +156,9 @@ public sealed class SyncService(
         DateTimeOffset from, DateTimeOffset to, CancellationToken ct = default)
     {
         if (sampleStore is null)
-            return new SyncPushResponse(0, 0);
+            return new SyncPushResponse(0, 0, []);
         var batch = await sampleStore.QueryAsync(vehicleId, null, from, to, ct).ConfigureAwait(false);
-        return batch.Count == 0 ? new SyncPushResponse(0, 0) : await PushSamplesAsync(batch, ct).ConfigureAwait(false);
+        return batch.Count == 0 ? new SyncPushResponse(0, 0, []) : await PushSamplesAsync(batch, ct).ConfigureAwait(false);
     }
 
     /// <summary>History query against the server. Null if there's no connection or no access.</summary>
@@ -198,11 +198,16 @@ public sealed class SyncService(
             throw new HttpRequestException($"Push {name}: HTTP {(int)resp.StatusCode}");
 
         var result = await resp.Content.ReadFromJsonAsync<SyncPushResponse>(Json, ct).ConfigureAwait(false)
-            ?? new SyncPushResponse(0, 0);
+            ?? new SyncPushResponse(0, 0, []);
 
-        // Successfully transferred → mark locally as Synced (ModifiedAt remains unchanged).
+        // Only entities the server actually accepted are marked Synced; a rejected one
+        // (e.g. its VehicleId doesn't resolve to a vehicle this user owns) stays Pending
+        // so it's retried on the next sync instead of being silently forgotten forever.
+        var rejected = result.RejectedIds.ToHashSet();
         foreach (var e in pending)
         {
+            if (rejected.Contains(e.Id))
+                continue;
             e.SyncState = SyncState.Synced;
             await repo.UpsertAsync(e, ct).ConfigureAwait(false);
         }

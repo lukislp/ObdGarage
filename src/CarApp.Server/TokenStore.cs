@@ -55,7 +55,9 @@ public sealed class TokenStore(string filePath)
         try
         {
             var records = await LoadAsync(ct).ConfigureAwait(false);
-            var record = records.FirstOrDefault(r => r.TokenHash == hash);
+            var hashBytes = Convert.FromBase64String(hash);
+            var record = records.FirstOrDefault(r =>
+                CryptographicOperations.FixedTimeEquals(Convert.FromBase64String(r.TokenHash), hashBytes));
             if (record is null)
                 return null;
             if (record.ExpiresAt <= now)

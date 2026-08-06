@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using CarApp.Core;
 using CarApp.Data;
 using CarApp.Shared;
@@ -44,7 +46,7 @@ public static class ServerApp
         {
             if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Password))
                 return Results.BadRequest(new ErrorResponse("E-Mail und Passwort sind erforderlich."));
-            if (!string.Equals(req.InviteCode, inviteCode, StringComparison.Ordinal))
+            if (!FixedTimeStringEquals(req.InviteCode, inviteCode))
                 return Results.Json(new ErrorResponse("Ungültiger Einladungscode."), statusCode: StatusCodes.Status403Forbidden);
 
             var user = await users.RegisterAsync(req.Email, req.Password, ct);
@@ -97,10 +99,11 @@ public static class ServerApp
             var userId = UserIdOf(http);
             var owned = await OwnedVehicleIdsAsync(vehicles, userId, ct);
             var accepted = batch.Where(s => owned.Contains(s.VehicleId)).ToList();
+            var rejectedIds = batch.Where(s => !owned.Contains(s.VehicleId)).Select(s => s.Id).ToList();
             foreach (var s in accepted)
                 s.SyncState = SyncState.Synced;
             await samples.AppendBatchAsync(accepted, ct);
-            return Results.Ok(new SyncPushResponse(accepted.Count, batch.Count - accepted.Count));
+            return Results.Ok(new SyncPushResponse(accepted.Count, rejectedIds.Count, rejectedIds));
         });
 
         api.MapGet("/samples", async (HttpContext http, Guid vehicleId, string? pidKey, string? from, string? to, CancellationToken ct) =>
@@ -126,14 +129,15 @@ public static class ServerApp
         {
             var userId = UserIdOf(http);
             var existingAll = (await vehicles.GetAllIncludingDeletedAsync(ct)).ToDictionary(v => v.Id);
-            int accepted = 0, rejected = 0;
+            int accepted = 0;
+            var rejectedIds = new List<Guid>();
             foreach (var incoming in batch)
             {
                 var existing = existingAll.GetValueOrDefault(incoming.Id);
                 // Foreign data is ignored: wrong owner OR attempt to hijack someone else's vehicle.
                 if (incoming.OwnerUserId != userId || (existing is not null && existing.OwnerUserId != userId))
                 {
-                    rejected++;
+                    rejectedIds.Add(incoming.Id);
                     continue;
                 }
                 accepted++;
@@ -143,7 +147,7 @@ public static class ServerApp
                 await vehicles.UpsertAsync(incoming, ct);
                 existingAll[incoming.Id] = incoming;
             }
-            return Results.Ok(new SyncPushResponse(accepted, rejected));
+            return Results.Ok(new SyncPushResponse(accepted, rejectedIds.Count, rejectedIds));
         });
 
         sync.MapGet("/vehicles", async (HttpContext http, string? since, CancellationToken ct) =>
@@ -167,7 +171,8 @@ public static class ServerApp
             var userId = UserIdOf(http);
             var owned = await OwnedVehicleIdsAsync(vehicles, userId, ct);
             var existingAll = (await repo.GetAllIncludingDeletedAsync(ct)).ToDictionary(e => e.Id);
-            int accepted = 0, rejected = 0;
+            int accepted = 0;
+            var rejectedIds = new List<Guid>();
             foreach (var incoming in batch)
             {
                 var existing = existingAll.GetValueOrDefault(incoming.Id);
@@ -175,7 +180,7 @@ public static class ServerApp
                 var existingOk = existing is null || (vehicleIdOf(existing) is Guid ev && owned.Contains(ev));
                 if (!incomingOk || !existingOk)
                 {
-                    rejected++;
+                    rejectedIds.Add(incoming.Id);
                     continue;
                 }
                 accepted++;
@@ -185,7 +190,7 @@ public static class ServerApp
                 await repo.UpsertAsync(incoming, ct);
                 existingAll[incoming.Id] = incoming;
             }
-            return Results.Ok(new SyncPushResponse(accepted, rejected));
+            return Results.Ok(new SyncPushResponse(accepted, rejectedIds.Count, rejectedIds));
         });
 
         sync.MapGet("/" + name, async (HttpContext http, string? since, CancellationToken ct) =>
@@ -214,4 +219,14 @@ public static class ServerApp
         DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var t)
             ? t
             : null;
+
+    /// <summary>Constant-time string comparison for secrets (invite code) - a plain
+    /// StringComparison.Ordinal comparison short-circuits on the first mismatched
+    /// character, leaking timing information about how much of the guess was correct.</summary>
+    private static bool FixedTimeStringEquals(string? a, string? b)
+    {
+        if (a is null || b is null)
+            return a is null && b is null;
+        return CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(a), Encoding.UTF8.GetBytes(b));
+    }
 }
