@@ -1,0 +1,323 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  CONFIGURATION: Release
+  IMAGE_SERVER: ghcr.io/lukislp/obdgarage-server
+  IMAGE_WEB: ghcr.io/lukislp/obdgarage-web
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Test stage — runs on every push to main AND every pull request
+  # ---------------------------------------------------------------------
+
+  # OBD core unit tests: PID decoding (SAE J1979), the read-only command whitelist, and
+  # Elm327Client behavior against a scripted ReplayTransport.
+  test-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+      - run: dotnet test tests/CarApp.Tests/CarApp.Tests.csproj --configuration ${{ env.CONFIGURATION }}
+
+  # Full application/E2E/sync suite via the project's own dependency-free runner (built
+  # for the offline session this project originated in - no NuGet needed to execute it,
+  # just to compile it). Exercises the vehicle simulator, trip recording, maintenance
+  # calculations, and full multi-device sync roundtrips against the real backend.
+  test-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+      - run: dotnet run --project tools/CarApp.TestRunner --configuration ${{ env.CONFIGURATION }}
+
+  test-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+      - run: dotnet format CarApp.slnx --verify-no-changes --verbosity diagnostic
+
+  build:
+    # No implicit stage-sequencing under GitHub's DAG model (unlike GitLab) - wait for
+    # every test job explicitly.
+    needs: [test-core, test-e2e, test-lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+      - run: dotnet restore CarApp.slnx
+      - run: dotnet build CarApp.slnx --configuration ${{ env.CONFIGURATION }} --no-restore
+
+  # ---------------------------------------------------------------------
+  # Version / docker / release — push to main only
+  # ---------------------------------------------------------------------
+  get-version:
+    needs: [build]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: obdgarage-release-chain
+      cancel-in-progress: false
+    # @semantic-release/github verifies push/write access as part of its plugin lifecycle
+    # even during a dry run - a read-only token fails that check outright. No actual writes
+    # happen here regardless of these permissions; dry_run: true never pushes/tags/releases.
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      next_version: ${{ steps.semrel.outputs.new_release_version }}
+      published: ${{ steps.semrel.outputs.new_release_published }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: semrel
+        uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6.0.0
+        with:
+          dry_run: true
+          extra_plugins: |
+            @semantic-release/changelog
+            @semantic-release/github
+            @semantic-release/git
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Fail if no next version determined
+        if: steps.semrel.outputs.new_release_published != 'true'
+        run: |
+          echo "::error::semantic-release did not determine a next version (no releasable commits since the last tag). Aborting instead of silently skipping."
+          exit 1
+
+  docker-build-push-server:
+    needs: [get-version]
+    if: github.event_name == 'push' && needs.get-version.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      NEXT_VERSION: ${{ needs.get-version.outputs.next_version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Guard against duplicate tag
+        run: |
+          if docker manifest inspect "${{ env.IMAGE_SERVER }}:${{ env.NEXT_VERSION }}" >/dev/null 2>&1; then
+            echo "::error::registry tag ${{ env.NEXT_VERSION }} already exists (version race with a parallel run). Do NOT retry this run; wait for it to finish, then push again to produce a fresh version."
+            exit 1
+          fi
+      # Build once, load it locally (amd64 only, matching the runner) to smoke-check
+      # before pushing anything multi-arch.
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/server.Dockerfile
+          load: true
+          tags: obdgarage-server:smoke-check
+          cache-from: type=gha,scope=server
+      - name: Smoke-check the built image
+        run: |
+          docker run -d --name obdgarage-server-smoke -p 5299:5299 -e InviteCode=smoke-test obdgarage-server:smoke-check
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5299/api/v1/health > /dev/null; then
+              echo "container is healthy"
+              docker rm -f obdgarage-server-smoke
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::container did not become healthy in time"
+          docker logs obdgarage-server-smoke
+          docker rm -f obdgarage-server-smoke
+          exit 1
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/server.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE_SERVER }}:latest
+            ${{ env.IMAGE_SERVER }}:${{ env.NEXT_VERSION }}
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
+
+  docker-build-push-web:
+    needs: [get-version]
+    if: github.event_name == 'push' && needs.get-version.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      NEXT_VERSION: ${{ needs.get-version.outputs.next_version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Guard against duplicate tag
+        run: |
+          if docker manifest inspect "${{ env.IMAGE_WEB }}:${{ env.NEXT_VERSION }}" >/dev/null 2>&1; then
+            echo "::error::registry tag ${{ env.NEXT_VERSION }} already exists (version race with a parallel run). Do NOT retry this run; wait for it to finish, then push again to produce a fresh version."
+            exit 1
+          fi
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/web.Dockerfile
+          load: true
+          tags: obdgarage-web:smoke-check
+          cache-from: type=gha,scope=web
+      - name: Smoke-check the built image
+        run: |
+          docker run -d --name obdgarage-web-smoke -p 5199:5199 obdgarage-web:smoke-check
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:5199/ > /dev/null; then
+              echo "container is healthy"
+              docker rm -f obdgarage-web-smoke
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::container did not become healthy in time"
+          docker logs obdgarage-web-smoke
+          docker rm -f obdgarage-web-smoke
+          exit 1
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/web.Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE_WEB }}:latest
+            ${{ env.IMAGE_WEB }}:${{ env.NEXT_VERSION }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+  trivy-scan:
+    needs: [get-version, docker-build-push-server, docker-build-push-web]
+    if: github.event_name == 'push' && needs.get-version.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      NEXT_VERSION: ${{ needs.get-version.outputs.next_version }}
+    strategy:
+      matrix:
+        image: [server, web]
+    steps:
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: ${{ matrix.image == 'server' && env.IMAGE_SERVER || env.IMAGE_WEB }}:${{ env.NEXT_VERSION }}
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+  semantic-release:
+    # get-version listed explicitly (not just transitively) so its outputs are reliably
+    # accessible below - GitHub Actions' needs context only guarantees access to
+    # directly-listed dependencies.
+    needs: [get-version, docker-build-push-server, docker-build-push-web]
+    if: github.event_name == 'push' && needs.get-version.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: obdgarage-release-chain
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - id: semrel
+        uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6.0.0
+        with:
+          extra_plugins: |
+            @semantic-release/changelog
+            @semantic-release/github
+            @semantic-release/git
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+      # Retry once for the narrow window where an out-of-band push to main landed between
+      # this job's checkout and its own push (the concurrency group above already serializes
+      # overlapping runs of this workflow, so this only guards against a genuinely external push).
+      - if: steps.semrel.outcome == 'failure'
+        run: |
+          git fetch origin main
+          git checkout -B main origin/main
+      - if: steps.semrel.outcome == 'failure'
+        uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6.0.0
+        with:
+          extra_plugins: |
+            @semantic-release/changelog
+            @semantic-release/github
+            @semantic-release/git
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

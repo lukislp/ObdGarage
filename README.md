@@ -1,6 +1,7 @@
 # ObdGarage
 
-[![CI](https://github.com/lukislp/ObdGarage/actions/workflows/ci.yml/badge.svg)](https://github.com/lukislp/ObdGarage/actions/workflows/ci.yml)
+[![CI/CD](https://github.com/lukislp/ObdGarage/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/lukislp/ObdGarage/actions/workflows/ci-cd.yml)
+[![Release](https://img.shields.io/github/v/release/lukislp/ObdGarage)](https://github.com/lukislp/ObdGarage/releases)
 [![License: AGPL-3.0](https://img.shields.io/github/license/lukislp/ObdGarage)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
 
@@ -69,7 +70,7 @@ courtesy.
 | `src/CarApp.Obd` | ELM327 client (read-only whitelist), PID registry, transports (Wi-Fi done; Android Bluetooth lives in `CarApp.App`), vehicle simulator |
 | `src/CarApp.Application` | `LiveDataService` (polling + gap-free value history), `TripRecorder`, `OdometerTracker`, `MaintenanceCalculator`, `FuelStatistics`, `SyncService` |
 | `src/CarApp.Data` | Dependency-free JSON/JSONL persistence behind the `Core` interfaces (swappable 1:1 for EF Core/SQLite) |
-| `src/CarApp.Server` | Backend: accounts (PBKDF2), hashed bearer tokens, Last-Write-Wins sync API, samples API; Docker-ready |
+| `src/CarApp.Server` | Backend: accounts (PBKDF2), hashed bearer tokens, Last-Write-Wins sync API, samples API |
 | `src/CarApp.Shared` | DTOs shared between app and backend |
 | `src/CarApp.Web` | Full UI, Blazor Interactive Server, no external JS dependencies |
 | `src/CarApp.App` | .NET MAUI shell (Android/iOS) incl. Android Bluetooth Classic transport - source only, needs the MAUI workload, not part of the solution file |
@@ -95,6 +96,28 @@ ASPNETCORE_URLS=http://127.0.0.1:5199 dotnet run --project src/CarApp.Web --no-l
 `src/CarApp.Web/launchSettings.json` overrides `ASPNETCORE_URLS`, so `--no-launch-profile` is
 required for the commands above to take effect.
 
+## Deployment
+
+Multi-arch (`linux/amd64` + `linux/arm64`) images for both the backend and the web app are built
+and pushed to GHCR on every release:
+
+```bash
+docker run -d -p 5299:5299 -v obdgarage-server-data:/data \
+  -e InviteCode=your-invite-code \
+  ghcr.io/lukislp/obdgarage-server:latest
+
+docker run -d -p 5199:5199 -v obdgarage-web-data:/app/data \
+  ghcr.io/lukislp/obdgarage-web:latest
+```
+
+`docker/server.Dockerfile` and `docker/web.Dockerfile` build from the repo root (both images
+share several projects). The backend's `InviteCode` defaults to `CARAPP-2026` if unset - override
+it for anything beyond local testing. Neither container currently persists its ASP.NET Core Data
+Protection key ring to a volume, so authentication cookies are invalidated on every container
+restart; mount `/home/app/.aspnet/DataProtection-Keys` (or configure
+`PersistKeysToFileSystem`/an external key ring) before relying on long-lived sessions in
+production.
+
 ## Testing
 
 Two complementary suites:
@@ -108,7 +131,9 @@ Two complementary suites:
   real SAE J1979 byte responses, the read-only command whitelist, and `Elm327Client` behavior
   against a scripted transport.
 
-Both run in CI on every push and pull request.
+Both run in CI on every push and pull request, alongside a solution build and a
+`dotnet format --verify-no-changes` lint check. Docker images are only built and published after
+all of these pass.
 
 ## Roadmap
 
