@@ -4,6 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/lukislp/ObdGarage)](https://github.com/lukislp/ObdGarage/releases)
 [![License: AGPL-3.0](https://img.shields.io/github/license/lukislp/ObdGarage)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/lukislp/ObdGarage/main/.github/badges/coverage.json)](https://github.com/lukislp/ObdGarage/actions/workflows/ci-cd.yml)
 
 A self-hosted, multi-user OBD2 vehicle tracker built with **Blazor Server** and **.NET MAUI**
 (.NET 10). Each user manages their own vehicles — a strict one-owner model, nothing is shared —
