@@ -5,6 +5,8 @@ using CarApp.Core;
 using CarApp.Data;
 using CarApp.Server;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 
 namespace CarApp.TestRunner;
 
@@ -17,28 +19,32 @@ public static class SyncTests
     private sealed record ClientCtx(
         string Dir,
         SyncService Sync,
-        JsonFileRepository<Vehicle> Vehicles,
-        JsonFileRepository<Trip> Trips,
-        JsonlObdSampleStore Samples,
+        EfSyncRepository<Vehicle> Vehicles,
+        EfSyncRepository<Trip> Trips,
+        EfObdSampleStore Samples,
         HttpClient Http);
 
     private static ClientCtx NewClient(string baseUrl)
     {
         var dir = Path.Combine(Path.GetTempPath(), "carapp-sync-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
+        var dbFactory = new SqliteDbContextFactory(Path.Combine(dir, "carapp.db"));
+        using (var migrationDb = dbFactory.CreateDbContext())
+            migrationDb.Database.Migrate();
+
         var http = new HttpClient { BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/") };
-        var vehicles = new JsonFileRepository<Vehicle>(dir);
-        var trips = new JsonFileRepository<Trip>(dir);
-        var store = new JsonlObdSampleStore(dir);
+        var vehicles = new EfSyncRepository<Vehicle>(dbFactory);
+        var trips = new EfSyncRepository<Trip>(dbFactory);
+        var store = new EfObdSampleStore(dbFactory);
         var sync = new SyncService(
             http,
             vehicles,
-            new JsonFileRepository<AdapterProfile>(dir),
-            new JsonFileRepository<OdometerReading>(dir),
+            new EfSyncRepository<AdapterProfile>(dbFactory),
+            new EfSyncRepository<OdometerReading>(dbFactory),
             trips,
-            new JsonFileRepository<MaintenanceTask>(dir),
-            new JsonFileRepository<FuelEntry>(dir),
-            new JsonFileRepository<Expense>(dir),
+            new EfSyncRepository<MaintenanceTask>(dbFactory),
+            new EfSyncRepository<FuelEntry>(dbFactory),
+            new EfSyncRepository<Expense>(dbFactory),
             store,
             new SystemClock(),
             Path.Combine(dir, "syncstate.json"));
@@ -224,6 +230,9 @@ public static class SyncTests
         {
             await app.StopAsync();
             await app.DisposeAsync();
+            // SqliteConnection pools its underlying OS file handle by default - without
+            // clearing the pool first, the directory deletes below fail with "file in use".
+            SqliteConnection.ClearAllPools();
             foreach (var d in dirs)
             {
                 try { Directory.Delete(d, recursive: true); }

@@ -3,6 +3,8 @@ using System.Text.RegularExpressions;
 using CarApp.Core;
 using CarApp.Data;
 using CarApp.Web.Services;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 
 namespace CarApp.Tests;
 
@@ -32,7 +34,11 @@ public class AppStateBugTests
         Directory.CreateDirectory(dir);
         try
         {
-            var vehicles = new JsonFileRepository<Vehicle>(dir);
+            var dbFactory = new SqliteDbContextFactory(Path.Combine(dir, "carapp.db"));
+            using (var migrationDb = dbFactory.CreateDbContext())
+                migrationDb.Database.Migrate();
+
+            var vehicles = new EfSyncRepository<Vehicle>(dbFactory);
             var localVehicle = new Vehicle { Name = "Familienkombi", OwnerUserId = AppState.LocalUserId };
             await vehicles.UpsertAsync(localVehicle);
 
@@ -67,13 +73,13 @@ public class AppStateBugTests
             var stateC = new AppState();
             _ = new SyncManager(
                 vehicles,
-                new JsonFileRepository<AdapterProfile>(dir),
-                new JsonFileRepository<OdometerReading>(dir),
-                new JsonFileRepository<Trip>(dir),
-                new JsonFileRepository<MaintenanceTask>(dir),
-                new JsonFileRepository<FuelEntry>(dir),
-                new JsonFileRepository<Expense>(dir),
-                new JsonlObdSampleStore(dir),
+                new EfSyncRepository<AdapterProfile>(dbFactory),
+                new EfSyncRepository<OdometerReading>(dbFactory),
+                new EfSyncRepository<Trip>(dbFactory),
+                new EfSyncRepository<MaintenanceTask>(dbFactory),
+                new EfSyncRepository<FuelEntry>(dbFactory),
+                new EfSyncRepository<Expense>(dbFactory),
+                new EfObdSampleStore(dbFactory),
                 new FakeClock2(DateTimeOffset.UtcNow),
                 stateC,
                 dir);
@@ -81,6 +87,9 @@ public class AppStateBugTests
         }
         finally
         {
+            // SqliteConnection pools its underlying OS file handle by default - without
+            // clearing the pool first, the directory delete below fails with "file in use".
+            SqliteConnection.ClearAllPools();
             try { Directory.Delete(dir, recursive: true); } catch (IOException) { }
         }
     }
