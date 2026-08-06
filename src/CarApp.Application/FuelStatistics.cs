@@ -43,6 +43,15 @@ public static class FuelStatistics
         var distance = withKm[^1].OdometerKm!.Value - withKm[0].OdometerKm!.Value;
         if (distance <= 0)
             return null;
-        return TotalCost(fuel, expenses) / (decimal)distance;
+
+        // Bound both fuel and expenses to the same date window the distance was measured
+        // over - otherwise a cost entry from outside this stretch of driving (or a fuel entry
+        // with no odometer reading at all) dominates the per-km figure instead of being
+        // excluded the same way the distance calculation already excludes it.
+        var from = withKm[0].Date;
+        var to = withKm[^1].Date;
+        var windowedFuel = fuel.Where(f => f.Date >= from && f.Date <= to);
+        var windowedExpenses = expenses.Where(e => e.Date >= from && e.Date <= to);
+        return TotalCost(windowedFuel, windowedExpenses) / (decimal)distance;
     }
 }
