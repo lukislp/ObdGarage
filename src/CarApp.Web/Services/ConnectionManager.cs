@@ -94,6 +94,9 @@ public sealed class ConnectionManager(
                 live.ReadingReceived += r => conn.Latest[r.PidKey] = r;
 
                 conn.PollTask = Task.Run(() => live.RunAsync(conn.Cts.Token), CancellationToken.None);
+                _ = conn.PollTask.ContinueWith(
+                    _ => HandlePollFailureAsync(vehicleId),
+                    CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
                 if (sim is not null)
                     conn.ProfileTask = Task.Run(() => DriveProfileAsync(sim, conn.Cts.Token), CancellationToken.None);
 
@@ -113,23 +116,35 @@ public sealed class ConnectionManager(
 
     public async Task DisconnectAsync(Guid vehicleId)
     {
-        if (!_connections.TryRemove(vehicleId, out var conn))
-            return;
-
-        conn.Cts.Cancel();
-        try { if (conn.PollTask is not null) await conn.PollTask; } catch { /* cancellation */ }
-        try { if (conn.ProfileTask is not null) await conn.ProfileTask; } catch { /* cancellation */ }
-
-        // Cleanly end an ongoing trip and update the odometer reading.
-        var running = conn.Recorder.CurrentTrip;
-        if (running is not null)
+        // Shares _connectLock with ConnectAsync: without it, a Connect racing a Disconnect for
+        // the same vehicle could interleave - e.g. Disconnect removes the entry and disposes the
+        // client while Connect is mid-setup and about to insert a new one, leaking the old
+        // client/CTS or letting a stale connection outlive its disposal.
+        await _connectLock.WaitAsync();
+        try
         {
-            await conn.Recorder.NotifyDisconnectedAsync();
-            await OnTripEndedAsync(vehicleId, running);
-        }
+            if (!_connections.TryRemove(vehicleId, out var conn))
+                return;
 
-        conn.Cts.Dispose();
-        await conn.Client.DisposeAsync();
+            conn.Cts.Cancel();
+            try { if (conn.PollTask is not null) await conn.PollTask; } catch { /* cancellation */ }
+            try { if (conn.ProfileTask is not null) await conn.ProfileTask; } catch { /* cancellation */ }
+
+            // Cleanly end an ongoing trip and update the odometer reading.
+            var running = conn.Recorder.CurrentTrip;
+            if (running is not null)
+            {
+                await conn.Recorder.NotifyDisconnectedAsync();
+                await OnTripEndedAsync(vehicleId, running);
+            }
+
+            conn.Cts.Dispose();
+            await conn.Client.DisposeAsync();
+        }
+        finally
+        {
+            _connectLock.Release();
+        }
     }
 
     public LiveSnapshot GetSnapshot(Guid vehicleId)
@@ -153,6 +168,37 @@ public sealed class ConnectionManager(
         if (vehicle is null)
             return null;
         return await odometerTracker.TryReadFromObdAsync(conn.Client, vehicle, ct);
+    }
+
+    /// <summary>
+    /// The poll loop died from an unhandled exception (hard transport I/O error, not the
+    /// ObdErrorException already handled inside LiveDataService) instead of being cancelled by
+    /// DisconnectAsync. Without this, the connection stays registered as "connected" forever
+    /// with a dead background task, and any open trip never ends. Cleans up exactly like an
+    /// explicit disconnect.
+    /// </summary>
+    private async Task HandlePollFailureAsync(Guid vehicleId)
+    {
+        if (!_connections.TryRemove(vehicleId, out var conn))
+            return;
+
+        try
+        {
+            var running = conn.Recorder.CurrentTrip;
+            if (running is not null)
+            {
+                await conn.Recorder.NotifyDisconnectedAsync();
+                await OnTripEndedAsync(vehicleId, running);
+            }
+        }
+        catch
+        {
+            // Cleanup must not throw out of a fire-and-forget continuation.
+        }
+
+        conn.Cts.Cancel();
+        conn.Cts.Dispose();
+        await conn.Client.DisposeAsync();
     }
 
     /// <summary>Trip end: update the odometer reading using the distance driven (source "estimated").</summary>
