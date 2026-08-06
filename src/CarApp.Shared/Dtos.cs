@@ -12,10 +12,12 @@ public sealed record LoginResponse(string Token, Guid UserId);
 public sealed record ErrorResponse(string Error);
 
 /// <summary>
-/// Response to a push: how many entities the server accepted and
-/// how many (e.g. vehicles belonging to another user) were rejected.
+/// Response to a push: how many entities the server accepted and how many (e.g. vehicles
+/// belonging to another user) were rejected. <see cref="RejectedIds"/> identifies exactly
+/// which ones were rejected, so the client can leave those (and only those) as Pending
+/// instead of blindly marking its whole locally-pending batch as Synced.
 /// </summary>
-public sealed record SyncPushResponse(int Accepted, int Rejected);
+public sealed record SyncPushResponse(int Accepted, int Rejected, List<Guid> RejectedIds);
 
 /// <summary>
 /// Pull response per entity type: all changes since <c>?since=</c> (including

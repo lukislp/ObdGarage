@@ -19,6 +19,13 @@ public sealed class TripRecorder(IRepository<Trip> trips, IClock clock) : ITripT
     public double StartSpeedThresholdKmh { get; set; } = 3.0;
     /// <summary>Gaps longer than this duration are not included in the distance (connection loss).</summary>
     public TimeSpan MaxIntegrationGap { get; set; } = TimeSpan.FromSeconds(30);
+    /// <summary>
+    /// A gap this long since the last sample - with no NotifyDisconnectedAsync call in between -
+    /// is treated as an implicit connection loss (dongle unpowered, app killed) rather than a
+    /// continuation of the same trip. Deliberately much larger than MaxIntegrationGap/IdleTimeout
+    /// so it never fires during normal polling hiccups, only genuine multi-minute-plus outages.
+    /// </summary>
+    public TimeSpan MaxConnectionGap { get; set; } = TimeSpan.FromMinutes(10);
 
     public Guid VehicleId { get; set; }
     public TripCategory DefaultCategory { get; set; } = TripCategory.Private;
@@ -33,6 +40,12 @@ public sealed class TripRecorder(IRepository<Trip> trips, IClock clock) : ITripT
 
         var speed = reading.Value;
         var now = reading.Timestamp;
+
+        // No samples at all for MaxConnectionGap means polling itself stopped (dongle lost
+        // power, Bluetooth/app killed) rather than the vehicle merely idling while connected -
+        // end the stale trip implicitly instead of silently resuming it once samples return.
+        if (CurrentTrip is not null && _lastSpeedAt is { } lastSampleAt && now - lastSampleAt >= MaxConnectionGap)
+            await EndTripAsync(lastSampleAt, ct).ConfigureAwait(false);
 
         if (CurrentTrip is null)
         {

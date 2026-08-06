@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.AspNetCore.DataProtection;
 using CarApp.Application;
 using CarApp.Core;
 using CarApp.Data;
@@ -23,6 +24,14 @@ builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 var dataDir = Path.Combine(builder.Environment.ContentRootPath, "data");
 var photosDir = Path.Combine(dataDir, "photos");
 Directory.CreateDirectory(photosDir);
+
+// Without this, ASP.NET Core falls back to its default per-machine key location
+// (e.g. /home/<user>/.aspnet/DataProtection-Keys in a container), which isn't part of
+// the volume mounted at dataDir - every container restart would then generate a fresh
+// key, silently invalidating every existing antiforgery token and interactive circuit.
+// Persisting into dataDir keeps keys stable across restarts as long as the volume is.
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDir, "dataprotection-keys")));
 
 builder.Services.AddSingleton(new PhotoStorage(photosDir));
 builder.Services.AddSingleton<IClock, SystemClock>();

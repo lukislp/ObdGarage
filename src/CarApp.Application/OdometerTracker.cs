@@ -27,6 +27,14 @@ public sealed class OdometerTracker(
             return null;
         }
 
+        // Same plausibility guard as manual entry: a glitchy PID response (bad byte
+        // decode, wrong scaling) can return a wildly wrong value that would otherwise
+        // silently overwrite the vehicle's trusted odometer baseline.
+        if (km < 0)
+            return null;
+        if (vehicle.LastKnownOdometerKm is { } last && (km < last || km - last > MaxManualJumpKm))
+            return null;
+
         // OBD beats everything: upgrade the source and save.
         await RecordAsync(vehicle, km, OdometerSource.ObdStandardPid, ct).ConfigureAwait(false);
         return km;

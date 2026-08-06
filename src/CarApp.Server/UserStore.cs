@@ -22,6 +22,13 @@ public sealed class UserStore(string filePath)
     private const int SaltBytes = 16;
     private const int HashBytes = 32;
 
+    // Fixed, non-secret salt used only to keep VerifyAsync's PBKDF2 cost constant when the
+    // account doesn't exist - never used to store or verify a real password. Without this,
+    // an unknown email short-circuits before hashing and returns ~10,000x faster than a
+    // known email with a wrong password, letting an attacker enumerate registered accounts
+    // purely from response timing.
+    private static readonly byte[] DummySalt = "CarApp.UserStore.ConstantTimeDummySalt!!"u8.ToArray()[..SaltBytes];
+
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
     private readonly SemaphoreSlim _lock = new(1, 1);
     private List<User>? _cache;
@@ -61,7 +68,12 @@ public sealed class UserStore(string filePath)
             var users = await LoadAsync(ct).ConfigureAwait(false);
             var user = users.FirstOrDefault(u => u.Email == normalized);
             if (user is null)
+            {
+                // Hash against a dummy salt so this branch costs the same as a real,
+                // failed verification below - see DummySalt's comment.
+                _ = Hash(password, DummySalt);
                 return null;
+            }
 
             var computed = Hash(password, Convert.FromBase64String(user.Salt));
             return CryptographicOperations.FixedTimeEquals(computed, Convert.FromBase64String(user.PasswordHash))

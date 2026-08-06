@@ -110,6 +110,19 @@ public sealed class SyncManager
             if (!result.Success)
                 return result;
 
+            // Persist auth only after migration succeeds - otherwise a failure here would
+            // leave IsLoggedIn reporting true (auth already on disk) while the caller was
+            // told the login failed and _state.CurrentUserId never switched over, silently
+            // stranding vehicles under the old local owner.
+            try
+            {
+                await MigrateVehicleOwnerAsync(service.UserId);
+            }
+            catch (Exception ex)
+            {
+                return new AuthResult(false, ex.Message);
+            }
+
             _auth.ServerUrl = serverUrl;
             _auth.Email = email;
             _auth.Token = service.Token;
@@ -118,7 +131,6 @@ public sealed class SyncManager
             _state.SyncEmail = email;
             SaveAuth();
 
-            await MigrateVehicleOwnerAsync(service.UserId);
             return result;
         }
         catch (Exception ex)
@@ -164,6 +176,11 @@ public sealed class SyncManager
             _service = null;
             _http?.Dispose();
             _http = null;
+
+            // Without this, AppState.CurrentUserId keeps pointing at the server user after
+            // logout, so any vehicle created afterwards is silently attributed to an account
+            // the app is no longer authenticated as, instead of the local user.
+            _state.CurrentUserId = AppState.LocalUserId;
         }
         finally { _lock.Release(); }
     }
@@ -230,6 +247,16 @@ public sealed class SyncManager
             _state.CurrentUserId = userId; // Login survives the restart
     }
 
-    private void SaveAuth() =>
-        File.WriteAllText(_authFilePath, JsonSerializer.Serialize(_auth, Json));
+    /// <summary>
+    /// Atomic write via tmp-file + rename (mirrors JsonFileRepository): a direct WriteAllText
+    /// truncates the file before writing the new content, so a crash/power loss mid-write
+    /// (or two overlapping writers) can leave sync-auth.json empty or half-written - which
+    /// LoadAuth would then silently treat as "logged out", losing the login state.
+    /// </summary>
+    private void SaveAuth()
+    {
+        var tmp = _authFilePath + ".tmp";
+        File.WriteAllText(tmp, JsonSerializer.Serialize(_auth, Json));
+        File.Move(tmp, _authFilePath, overwrite: true);
+    }
 }
