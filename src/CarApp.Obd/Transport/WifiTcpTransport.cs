@@ -19,11 +19,25 @@ public sealed class WifiTcpTransport(string host, int port = 35000) : IObdTransp
     {
         await DisconnectAsync().ConfigureAwait(false);
 
-        _client = new TcpClient { NoDelay = true };
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(ConnectTimeout);
-        await _client.ConnectAsync(host, port, timeout.Token).ConfigureAwait(false);
-        _stream = _client.GetStream();
+        var client = new TcpClient { NoDelay = true };
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(ConnectTimeout);
+            await client.ConnectAsync(host, port, timeout.Token).ConfigureAwait(false);
+        }
+        catch
+        {
+            // A timed-out/refused connect must not leak the socket - only assign _client
+            // once connected, so a caller that gives up after one failed attempt (rather
+            // than retrying, which would go through DisconnectAsync above) doesn't leave
+            // an unconnected TcpClient's native handle around for the GC to eventually reap.
+            client.Dispose();
+            throw;
+        }
+
+        _client = client;
+        _stream = client.GetStream();
     }
 
     public Task DisconnectAsync()
