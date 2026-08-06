@@ -44,10 +44,18 @@ RegisterRepository<FuelEntry>(builder.Services, dataDir);
 RegisterRepository<Expense>(builder.Services, dataDir);
 builder.Services.AddSingleton<IObdSampleStore>(new JsonlObdSampleStore(dataDir));
 
-builder.Services.AddSingleton<AppState>();
+// AppState/SyncManager hold which sync account is "logged in" and gate which vehicles a
+// browser sees (Home.razor filters by State.CurrentUserId). This app has no other notion
+// of browser-session identity (no cookies/auth middleware) - as singletons, one person
+// logging in on one tab would silently switch every OTHER already-open tab's identity too,
+// including which account newly-created vehicles get attributed to. Scoped (per Blazor
+// Server circuit) isolates each browser tab's login state from every other one; a fresh
+// circuit still resumes whichever account was last saved to sync-auth.json (see MainLayout's
+// SyncManager pre-warm below), matching the previous single-user convenience.
+builder.Services.AddScoped<AppState>();
 builder.Services.AddSingleton<OdometerTracker>();
 builder.Services.AddSingleton<ConnectionManager>();
-builder.Services.AddSingleton(sp => new SyncManager(
+builder.Services.AddScoped(sp => new SyncManager(
     sp.GetRequiredService<ISyncRepository<Vehicle>>(),
     sp.GetRequiredService<ISyncRepository<AdapterProfile>>(),
     sp.GetRequiredService<ISyncRepository<OdometerReading>>(),
@@ -74,10 +82,6 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.MapCarAppEndpoints(photosDir);
-
-// Instantiate SyncManager early so a saved token (data/sync-auth.json)
-// is loaded immediately and AppState.CurrentUserId is already correct on the first request.
-_ = app.Services.GetRequiredService<SyncManager>();
 
 app.Run();
 
