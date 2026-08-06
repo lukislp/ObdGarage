@@ -30,6 +30,9 @@ offline-first, strict per-owner scoping).
   header spoofing (`ATSH`) are blocked at the transport layer, not just in the UI - see
   [Safety](#safety).
 - **Automatic trip log** derived from live odometer/speed data, with CSV export.
+- **DTC diagnostics**: read stored and pending fault codes (mode 03/07) with plain-text
+  descriptions for common generic codes across all four categories (Powertrain/Chassis/Body/
+  Network). Read-only, like everything else - clearing codes (mode 04) is permanently blocked.
 - **Maintenance planner** for inspection and service intervals.
 - **Fuel and cost tracking.**
 - **Continuous value history**: every polled live value is stored as a sample (not just during
@@ -123,14 +126,14 @@ production.
 
 Two complementary suites:
 
-- **`tools/CarApp.TestRunner`** (100 tests) - the primary suite. Dependency-free by design (this
+- **`tools/CarApp.TestRunner`** (113 checks) - the primary suite. Dependency-free by design (this
   project originated in an environment without NuGet access), covering the full stack: OBD
-  parsing, application services, JSON persistence, and end-to-end sync roundtrips between
-  multiple simulated devices and the real backend (ownership isolation, Last-Write-Wins
-  conflicts, soft-delete tombstones, sample push/query scoping).
-- **`tests/CarApp.Tests`** (xUnit) - focused unit tests for the OBD core: PID decoding against
-  real SAE J1979 byte responses, the read-only command whitelist, and `Elm327Client` behavior
-  against a scripted transport.
+  parsing (including DTC reading), application services, persistence, and end-to-end sync
+  roundtrips between multiple simulated devices and the real backend (ownership isolation,
+  Last-Write-Wins conflicts, soft-delete tombstones, sample push/query scoping).
+- **`tests/CarApp.Tests`** (xUnit) - the OBD core: PID/DTC decoding against real SAE J1979/J2012
+  byte responses, the read-only command whitelist, and `Elm327Client` behavior against a scripted
+  transport.
 
 Both run in CI on every push and pull request, alongside a solution build and a
 `dotnet format --verify-no-changes` lint check. Docker images are only built and published after
@@ -148,8 +151,9 @@ all of these pass.
       Classic).
 - [ ] Validate against a real ELM327 adapter and vehicle - everything so far has run against the
       built-in simulator.
-- [ ] DTC diagnostics (read fault codes with plain-text descriptions); clearing codes (Mode 04)
-      stays blocked pending an explicit, confirmed product decision.
+- [x] DTC diagnostics (read stored/pending fault codes with plain-text descriptions for common
+      generic codes). Clearing codes (Mode 04) stays permanently blocked - no product decision
+      changed that; this app only ever reads.
 - [ ] Harden the backend for access outside the home network (reverse proxy with HTTPS, or
       WireGuard/Tailscale).
 
