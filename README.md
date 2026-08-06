@@ -30,6 +30,9 @@ offline-first, strict per-owner scoping).
   header spoofing (`ATSH`) are blocked at the transport layer, not just in the UI - see
   [Safety](#safety).
 - **Automatic trip log** derived from live odometer/speed data, with CSV export.
+- **DTC diagnostics**: read stored and pending fault codes (mode 03/07) with plain-text
+  descriptions for common generic codes across all four categories (Powertrain/Chassis/Body/
+  Network). Read-only, like everything else - clearing codes (mode 04) is permanently blocked.
 - **Maintenance planner** for inspection and service intervals.
 - **Fuel and cost tracking.**
 - **Continuous value history**: every polled live value is stored as a sample (not just during
@@ -152,8 +155,9 @@ all of these pass.
       Classic).
 - [ ] Validate against a real ELM327 adapter and vehicle - everything so far has run against the
       built-in simulator.
-- [ ] DTC diagnostics (read fault codes with plain-text descriptions); clearing codes (Mode 04)
-      stays blocked pending an explicit, confirmed product decision.
+- [x] DTC diagnostics (read stored/pending fault codes with plain-text descriptions for common
+      generic codes). Clearing codes (Mode 04) stays permanently blocked - no product decision
+      changed that; this app only ever reads.
 - [ ] Harden the backend for access outside the home network (reverse proxy with HTTPS, or
       WireGuard/Tailscale).
 

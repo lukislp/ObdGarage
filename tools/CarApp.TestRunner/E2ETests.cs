@@ -126,6 +126,22 @@ public static class E2ETests
         await odo.ApplyTripDistanceAsync(vehicle, 12.5);
         checkEqual("OBD-Quelle wird NICHT fortgeschrieben", 123456.7, vehicle.LastKnownOdometerKm ?? double.NaN, 1e-3);
 
+        Console.WriteLine("Fehlercodes (DTC):");
+        check("Ohne gespeicherte Codes → leere Liste (kein Fehler)",
+            (await client.ReadDtcsAsync()).Count == 0);
+        car.Dtcs = ["P0301", "P0420"];
+        car.PendingDtcs = ["P0133"];
+        var stored = await client.ReadDtcsAsync();
+        check($"Gespeicherte Codes gelesen (war {string.Join(",", stored)})",
+            stored.SequenceEqual(["P0301", "P0420"]));
+        var pending = await client.ReadDtcsAsync(pending: true);
+        check($"Anstehende Codes über eigenes Kommando (war {string.Join(",", pending)})",
+            pending.SequenceEqual(["P0133"]));
+        check("Beschreibung für bekannten Code vorhanden",
+            DtcDescriptions.Describe("P0420") is not null);
+        car.Dtcs = [];
+        car.PendingDtcs = [];
+
         Console.WriteLine("Wartungsplaner:");
         var today = new DateOnly(2026, 7, 22);
         var oil = new MaintenanceTask

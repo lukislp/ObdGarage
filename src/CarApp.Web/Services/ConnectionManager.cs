@@ -171,6 +171,17 @@ public sealed class ConnectionManager(
     }
 
     /// <summary>
+    /// Reads diagnostic trouble codes (stored, or pending if requested) — null if not connected,
+    /// empty if connected but no codes are currently stored/pending.
+    /// </summary>
+    public async Task<IReadOnlyList<string>?> ReadDtcsAsync(Guid vehicleId, bool pending = false, CancellationToken ct = default)
+    {
+        if (!_connections.TryGetValue(vehicleId, out var conn))
+            return null;
+        return await conn.Client.ReadDtcsAsync(pending, ct);
+    }
+
+    /// <summary>
     /// The poll loop died from an unhandled exception (hard transport I/O error, not the
     /// ObdErrorException already handled inside LiveDataService) instead of being cancelled by
     /// DisconnectAsync. Without this, the connection stays registered as "connected" forever

@@ -131,6 +131,29 @@ public sealed class Elm327Client(IObdTransport transport) : IAsyncDisposable
         return supported;
     }
 
+    /// <summary>
+    /// Reads diagnostic trouble codes: stored (mode 03, the default) or pending (mode 07,
+    /// detected but not yet confirmed/MIL-triggering). Both are read-only requests, distinct
+    /// from the permanently-blocked mode 04 (clear codes) - see the class doc comment.
+    /// An empty list means no codes are currently stored/pending, not a read failure.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> ReadDtcsAsync(bool pending = false, CancellationToken ct = default)
+    {
+        byte[] payload;
+        try
+        {
+            payload = await QueryAsync(pending ? "07" : "03", ct).ConfigureAwait(false);
+        }
+        catch (ObdErrorException)
+        {
+            // Some adapters/vehicles answer "NO DATA" when there are zero stored/pending codes
+            // rather than an explicit empty/zero-filled response - a healthy state, not an error.
+            return [];
+        }
+
+        return Dtc.DecodeAll(payload);
+    }
+
     /// <summary>Reads the vehicle identification number (mode 09, PID 02) — basis for automatic vehicle detection.</summary>
     public async Task<string?> ReadVinAsync(CancellationToken ct = default)
     {
