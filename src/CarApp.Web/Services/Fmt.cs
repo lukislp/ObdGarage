@@ -28,10 +28,19 @@ public static class Fmt
     public static string Km(double? km) =>
         km is { } v ? v.ToString("N0", De) + " km" : "–";
 
-    public static string Duration(TimeSpan span) =>
-        span.TotalHours >= 1
+    public static string Duration(TimeSpan span)
+    {
+        // TimeSpan.Minutes/.Seconds carry the same sign as the whole span (e.g. -90s has
+        // Minutes == -1 AND Seconds == -30, not a "wrapped" positive value), so a negative
+        // span - EndedAt ever preceding StartedAt, e.g. from a last-write-wins sync merge or
+        // a mid-trip clock adjustment - would render as a nonsensical double-negative string.
+        // A duration is conceptually never negative, so treat one as "unknown" (zero).
+        if (span < TimeSpan.Zero)
+            span = TimeSpan.Zero;
+        return span.TotalHours >= 1
             ? $"{(int)span.TotalHours} h {span.Minutes:00} min"
             : $"{span.Minutes} min {span.Seconds:00} s";
+    }
 
     /// <summary>Parses numbers from form fields — accepts both period and comma.</summary>
     public static double? ParseDouble(string? raw)

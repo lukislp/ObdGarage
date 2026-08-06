@@ -93,11 +93,29 @@ public sealed class BluetoothClassicTransport(string macAddress) : IObdTransport
                 $"Bluetooth-Verbindung zu {macAddress} fehlgeschlagen — Adapter außer Reichweite oder nicht gekoppelt?", ex);
         }
 
+        Stream input, output;
+        try
+        {
+            input = socket.InputStream
+                ?? throw new InvalidOperationException("Bluetooth-Socket liefert keinen InputStream.");
+            output = socket.OutputStream
+                ?? throw new InvalidOperationException("Bluetooth-Socket liefert keinen OutputStream.");
+        }
+        catch
+        {
+            // Same reasoning as the Connect() failure branch above: a socket that connected
+            // but can't hand out its streams (seen on some OEM/clone Bluetooth stacks) must
+            // not be left assigned to _socket - otherwise it's never closed/disposed (leaking
+            // the native RFCOMM handle) and IsConnected keeps reporting true for a transport
+            // that's actually unusable, since _input/_output would stay null forever.
+            try { socket.Close(); } catch { /* doesn't matter */ }
+            socket.Dispose();
+            throw;
+        }
+
         _socket = socket;
-        _input = socket.InputStream
-            ?? throw new InvalidOperationException("Bluetooth-Socket liefert keinen InputStream.");
-        _output = socket.OutputStream
-            ?? throw new InvalidOperationException("Bluetooth-Socket liefert keinen OutputStream.");
+        _input = input;
+        _output = output;
         // Java stream for Available(): allows reading without a blocking thread.
         _javaInput = (_input as Android.Runtime.InputStreamInvoker)?.BaseInputStream;
     }
@@ -147,6 +165,12 @@ public sealed class BluetoothClassicTransport(string macAddress) : IObdTransport
             }
             catch (Java.IO.IOException)
             {
+                // Android's BluetoothSocket.IsConnected only ever flips to false after an
+                // explicit Close() - it does not track live link health - so without this,
+                // IsConnected would keep reporting true indefinitely after a real physical
+                // disconnect (out of range, ignition off), and any reconnect logic gated on
+                // "!IsConnected" would never fire.
+                await DisconnectAsync().ConfigureAwait(false);
                 return 0; // remote end closed the connection
             }
 

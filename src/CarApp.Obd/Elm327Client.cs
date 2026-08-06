@@ -28,8 +28,6 @@ public sealed class ObdErrorException(string command, string response)
 /// </summary>
 public sealed class Elm327Client(IObdTransport transport) : IAsyncDisposable
 {
-    private static readonly Regex HexLine = new(@"^[0-9A-F]{2}(\s?[0-9A-F]{2})*$", RegexOptions.Compiled);
-
     /// <summary>
     /// Allowed AT commands (adapter configuration, has no effect on the vehicle side).
     /// Deliberately strict: e.g. ATSH (Set Header) is NOT allowed.
@@ -122,8 +120,12 @@ public sealed class Elm327Client(IObdTransport transport) : IAsyncDisposable
             foreach (var pid in StandardPids.DecodeSupportedPidMask(range, mask))
                 supported.Add(pid);
 
-            // Last bit of the mask indicates whether the next range exists.
-            if (mask.Length < 4 || (mask[3] & 0x01) == 0 || range >= 0xC0)
+            // Last bit of the mask indicates whether the next range exists. SAE J1979 defines
+            // ranges only up to 0xE0 (PIDs 0xE1-0x100) - that hard cutoff stops the scan there
+            // regardless of the bit (avoiding an infinite loop / byte overflow past 0xE0), but
+            // must NOT fire any earlier than that, or the mask's own continuation bit for a
+            // legitimate higher range (e.g. 0xC0 signalling 0xE0 exists) gets silently ignored.
+            if (mask.Length < 4 || (mask[3] & 0x01) == 0 || range >= 0xE0)
                 break;
         }
         return supported;
@@ -179,10 +181,10 @@ public sealed class Elm327Client(IObdTransport transport) : IAsyncDisposable
 
         foreach (var line in response.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            var normalized = line.Replace(" ", "");
-            if (!HexLine.IsMatch(line.Trim()) && !HexLine.IsMatch(normalized))
-                continue;
-
+            // ExtractHexBytes already validates/decodes hex content per line and yields an
+            // empty/short result for anything that isn't valid data, which the checks below
+            // skip anyway - no separate pre-filter needed (and one used to reject lines
+            // ExtractHexBytes could otherwise parse fine, see the CAN-header fix there).
             var bytes = ExtractHexBytes(line);
             if (bytes.Count < 2 || bytes[0] != expectedMode)
                 continue;
@@ -241,6 +243,12 @@ public sealed class Elm327Client(IObdTransport transport) : IAsyncDisposable
         {
             // Remove line prefixes from multi-frame responses ("0:", "1:", …)
             var content = Regex.Replace(line.Trim(), @"^[0-9A-F]{1,3}:", "");
+            // Remove a leading CAN arbitration ID (11-bit "7E8" or 29-bit "18DAF110"), present
+            // on every response line once "headers on" (ATH1) is in effect. ATH1 is on the
+            // read-only whitelist (documented as harmless - it configures the adapter, not the
+            // vehicle), so a caller can legally leave it in effect; without stripping it here,
+            // every subsequent response line fails the hex-pair checks below and is discarded.
+            content = Regex.Replace(content, @"^[0-9A-F]{3}(?:[0-9A-F]{5})?\s+", "");
             // Skip ISO-TP length lines like "014" (3 hex characters alone)
             var compact = content.Replace(" ", "");
             if (compact.Length % 2 != 0)
