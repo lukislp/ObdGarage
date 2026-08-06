@@ -73,7 +73,7 @@ courtesy.
 | `src/CarApp.Core` | Domain models + interfaces, dependency-free |
 | `src/CarApp.Obd` | ELM327 client (read-only whitelist), PID registry, transports (Wi-Fi done; Android Bluetooth lives in `CarApp.App`), vehicle simulator |
 | `src/CarApp.Application` | `LiveDataService` (polling + gap-free value history), `TripRecorder`, `OdometerTracker`, `MaintenanceCalculator`, `FuelStatistics`, `SyncService` |
-| `src/CarApp.Data` | Dependency-free JSON/JSONL persistence behind the `Core` interfaces (swappable 1:1 for EF Core/SQLite) |
+| `src/CarApp.Data` | EF Core/SQLite persistence behind the `Core` interfaces (one `carapp.db` per data directory; earlier per-entity JSON files are imported automatically on first run) |
 | `src/CarApp.Server` | Backend: accounts (PBKDF2), hashed bearer tokens, Last-Write-Wins sync API, samples API |
 | `src/CarApp.Shared` | DTOs shared between app and backend |
 | `src/CarApp.Web` | Full UI, Blazor Interactive Server, no external JS dependencies |
@@ -126,14 +126,17 @@ production.
 
 Two complementary suites:
 
-- **`tools/CarApp.TestRunner`** (113 checks) - the primary suite. Dependency-free by design (this
+- **`tools/CarApp.TestRunner`** (109 checks) - the primary suite. Dependency-free by design (this
   project originated in an environment without NuGet access), covering the full stack: OBD
-  parsing (including DTC reading), application services, persistence, and end-to-end sync
-  roundtrips between multiple simulated devices and the real backend (ownership isolation,
-  Last-Write-Wins conflicts, soft-delete tombstones, sample push/query scoping).
-- **`tests/CarApp.Tests`** (xUnit) - the OBD core: PID/DTC decoding against real SAE J1979/J2012
-  byte responses, the read-only command whitelist, and `Elm327Client` behavior against a scripted
-  transport.
+  parsing, application services, persistence, and end-to-end sync roundtrips between multiple
+  simulated devices and the real backend (ownership isolation, Last-Write-Wins conflicts,
+  soft-delete tombstones, sample push/query scoping), plus a security-focused pass (login timing
+  side-channel, rejected-push retry behavior).
+- **`tests/CarApp.Tests`** (xUnit) - OBD core (PID decoding against real SAE J1979 byte
+  responses, the read-only command whitelist, `Elm327Client` behavior against a scripted
+  transport) plus regression coverage for bugs found across the application, persistence
+  (including the EF Core/SQLite repositories and the JSON→SQLite upgrade importer), and web UI
+  layers.
 
 Both run in CI on every push and pull request, alongside a solution build and a
 `dotnet format --verify-no-changes` lint check. Docker images are only built and published after
@@ -145,8 +148,9 @@ all of these pass.
       real device) - currently shows a placeholder view.
 - [ ] Extract the Web UI into a shared Razor Class Library so MAUI gets the same interactivity
       as the Web app.
-- [ ] Switch persistence from JSON to EF Core + SQLite (only `CarApp.Data` changes - the
-      repository interfaces stay the same).
+- [x] Switch persistence from JSON to EF Core + SQLite (only `CarApp.Data` changed - the
+      repository interfaces stayed the same). Existing per-entity JSON data from before the
+      switch is imported automatically on first startup against a given data directory.
 - [ ] Implement the BLE transport (skeleton exists; iOS can only use BLE or Wi-Fi, not Bluetooth
       Classic).
 - [ ] Validate against a real ELM327 adapter and vehicle - everything so far has run against the

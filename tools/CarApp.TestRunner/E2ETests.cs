@@ -4,6 +4,8 @@ using CarApp.Data;
 using CarApp.Obd;
 using CarApp.Obd.Pids;
 using CarApp.Obd.Transport;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 
 namespace CarApp.TestRunner;
 
@@ -36,10 +38,15 @@ public static class E2ETests
         checkEqual("Odometer über Simulator", 123456.7, await client.ReadPidAsync(StandardPids.Odometer), 1e-3);
         checkEqual("ATRV über Simulator", 13.8, await client.ReadAdapterVoltageAsync() ?? double.NaN, 1e-3);
 
-        var store = new JsonlObdSampleStore(dir);
-        var trips = new JsonFileRepository<Trip>(dir);
-        var vehicles = new JsonFileRepository<Vehicle>(dir);
-        var odoReadings = new JsonFileRepository<OdometerReading>(dir);
+        var dbPath = Path.Combine(dir, "carapp.db");
+        var dbFactory = new SqliteDbContextFactory(dbPath);
+        using (var migrationDb = dbFactory.CreateDbContext())
+            migrationDb.Database.Migrate();
+
+        var store = new EfObdSampleStore(dbFactory);
+        var trips = new EfSyncRepository<Trip>(dbFactory);
+        var vehicles = new EfSyncRepository<Vehicle>(dbFactory);
+        var odoReadings = new EfSyncRepository<OdometerReading>(dbFactory);
 
         var vehicle = new Vehicle { Name = "Testwagen", Vin = vin, OwnerUserId = Guid.NewGuid() };
         await vehicles.UpsertAsync(vehicle);
@@ -174,7 +181,10 @@ public static class E2ETests
             FuelStatistics.ConsumptionPer100Km([fuel[0]]) is null);
 
         Console.WriteLine("Retention (Rohwerte → Minuten-Aggregate):");
-        var rStore = new JsonlObdSampleStore(Path.Combine(dir, "retention"));
+        var rDbFactory = new SqliteDbContextFactory(Path.Combine(dir, "retention.db"));
+        using (var migrationDb = rDbFactory.CreateDbContext())
+            migrationDb.Database.Migrate();
+        var rStore = new EfObdSampleStore(rDbFactory);
         var v2 = Guid.NewGuid();
         var start = new DateTimeOffset(2026, 7, 1, 8, 0, 0, TimeSpan.Zero);
         var raw = new List<ObdSample>();
@@ -193,17 +203,22 @@ public static class E2ETests
         check("Kompaktierung ist idempotent", secondRun == 0);
 
         Console.WriteLine("Persistenz über Neustart:");
-        var vehiclesReloaded = new JsonFileRepository<Vehicle>(dir);
+        var vehiclesReloaded = new EfSyncRepository<Vehicle>(dbFactory);
         var reloaded = await vehiclesReloaded.GetAllAsync();
         check("Fahrzeuge nach Neustart geladen", reloaded.Count == 2 && reloaded.Any(v => v.Name == "Testwagen"));
         var reloadedVehicle = reloaded.First(v => v.Name == "Testwagen");
         checkEqual("km-Stand überlebte Neustart", 123456.7, reloadedVehicle.LastKnownOdometerKm ?? double.NaN, 1e-3);
         await vehiclesReloaded.DeleteAsync(oldVehicle.Id);
-        var vehiclesAgain = new JsonFileRepository<Vehicle>(dir);
+        var vehiclesAgain = new EfSyncRepository<Vehicle>(dbFactory);
         check("Soft Delete überlebt Neustart",
             (await vehiclesAgain.GetAllAsync()).Count == 1 &&
             await vehiclesAgain.GetAsync(oldVehicle.Id) is null);
 
+        // SqliteConnection pools its underlying OS file handle by default (a real perf win in
+        // production, where EfSyncRepository/EfObdSampleStore open a fresh short-lived
+        // connection per call) - without clearing the pool first, the directory delete below
+        // fails with "file in use" since the pooled handle to carapp.db is still open.
+        SqliteConnection.ClearAllPools();
         Directory.Delete(dir, recursive: true);
     }
 }
