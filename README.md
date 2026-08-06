@@ -18,7 +18,7 @@ real Wi-Fi adapter), value-history charts, an automatic trip log with CSV export
 planner, fuel/cost tracking, and sync against the self-hosted backend (invite-code registration,
 offline-first, strict per-owner scoping).
 
-> **Status:** functional MVP - backend, sync, and the full web UI are built and tested (100/100
+> **Status:** functional MVP - backend, sync, and the full web UI are built and tested (all
 > passing, see [Testing](#testing)) against a simulated vehicle. **Not yet validated against a
 > real OBD2 adapter or vehicle**, and the mobile (MAUI) shell exists as source only. See
 > [Roadmap](#roadmap).
@@ -78,7 +78,7 @@ courtesy.
 | `src/CarApp.Shared` | DTOs shared between app and backend |
 | `src/CarApp.Web` | Full UI, Blazor Interactive Server, no external JS dependencies |
 | `src/CarApp.App` | .NET MAUI shell (Android/iOS) incl. Android Bluetooth Classic transport - source only, needs the MAUI workload, not part of the solution file |
-| `tests/CarApp.Tests` | xUnit - OBD core (PID decoding, whitelist, client behavior) |
+| `tests/CarApp.Tests` | xUnit - OBD core (PID/DTC decoding, whitelist, client behavior), EF Core/SQLite persistence, and regression coverage for bugs found across the app |
 | `tools/CarApp.TestRunner` | Full application/E2E/sync suite, dependency-free (compiles without NuGet) |
 
 ## Getting started
@@ -86,7 +86,7 @@ courtesy.
 Requires the .NET 10 SDK.
 
 ```bash
-# 1. Full test suite (100 tests, including end-to-end with a vehicle simulator + sync roundtrips)
+# 1. Full test suite (113 checks, including end-to-end with a vehicle simulator + sync roundtrips)
 dotnet run --project tools/CarApp.TestRunner
 
 # 2. Start the backend (invite code defaults to CARAPP-2026)
@@ -126,15 +126,15 @@ production.
 
 Two complementary suites:
 
-- **`tools/CarApp.TestRunner`** (109 checks) - the primary suite. Dependency-free by design (this
+- **`tools/CarApp.TestRunner`** (113 checks) - the primary suite. Dependency-free by design (this
   project originated in an environment without NuGet access), covering the full stack: OBD
-  parsing, application services, persistence, and end-to-end sync roundtrips between multiple
-  simulated devices and the real backend (ownership isolation, Last-Write-Wins conflicts,
-  soft-delete tombstones, sample push/query scoping), plus a security-focused pass (login timing
-  side-channel, rejected-push retry behavior).
-- **`tests/CarApp.Tests`** (xUnit) - OBD core (PID decoding against real SAE J1979 byte
-  responses, the read-only command whitelist, `Elm327Client` behavior against a scripted
-  transport) plus regression coverage for bugs found across the application, persistence
+  parsing (including DTC reading), application services, persistence, and end-to-end sync
+  roundtrips between multiple simulated devices and the real backend (ownership isolation,
+  Last-Write-Wins conflicts, soft-delete tombstones, sample push/query scoping), plus a
+  security-focused pass (login timing side-channel, rejected-push retry behavior).
+- **`tests/CarApp.Tests`** (65 tests, xUnit) - OBD core (PID/DTC decoding against real SAE
+  J1979/J2012 byte responses, the read-only command whitelist, `Elm327Client` behavior against a
+  scripted transport) plus regression coverage for bugs found across the application, persistence
   (including the EF Core/SQLite repositories and the JSON→SQLite upgrade importer), and web UI
   layers.
 
