@@ -1,49 +1,132 @@
-# CarApp — OBD2-Fahrzeug-App (Blazor / .NET MAUI)
+# ObdGarage
 
-Vollständiger Plan: PROJEKTPLAN.md · MAUI-Anleitung: docs/MAUI-SETUP.md
+[![CI](https://github.com/lukislp/ObdGarage/actions/workflows/ci.yml/badge.svg)](https://github.com/lukislp/ObdGarage/actions/workflows/ci.yml)
+[![License: AGPL-3.0](https://img.shields.io/github/license/lukislp/ObdGarage)](LICENSE)
+[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
 
-## Schnellstart (auf deinem Rechner, .NET 10 SDK)
+A self-hosted, multi-user OBD2 vehicle tracker built with **Blazor Server** and **.NET MAUI**
+(.NET 10). Each user manages their own vehicles — a strict one-owner model, nothing is shared —
+connects over a standard ELM327 adapter (Bluetooth Classic, BLE, or Wi-Fi), and gets an
+automatic trip log, a maintenance planner (inspection/emissions due dates), fuel cost tracking,
+and full value-history charts out of the connection's live data.
 
-    # 1. Alle Tests (100 Stück, inkl. End-to-End mit Fahrzeug-Simulator + Sync-Roundtrip)
-    dotnet run --project tools/CarApp.TestRunner
+The Web app is a fully working test bed for the UI while the mobile shell is built out: vehicle
+cards (photo, odometer with source, inspection/service status), a live dashboard (simulator or
+real Wi-Fi adapter), value-history charts, an automatic trip log with CSV export, a maintenance
+planner, fuel/cost tracking, and sync against the self-hosted backend (invite-code registration,
+offline-first, strict per-owner scoping).
 
-    # 2. Backend starten (Heimserver; Einladungscode Standard: CARAPP-2026)
-    ASPNETCORE_URLS=http://0.0.0.0:5299 dotnet run --project src/CarApp.Server --no-launch-profile
+> **Status:** functional MVP - backend, sync, and the full web UI are built and tested (100/100
+> passing, see [Testing](#testing)) against a simulated vehicle. **Not yet validated against a
+> real OBD2 adapter or vehicle**, and the mobile (MAUI) shell exists as source only. See
+> [Roadmap](#roadmap).
 
-    # 3. Web-App starten und im Browser öffnen
-    ASPNETCORE_URLS=http://127.0.0.1:5199 dotnet run --project src/CarApp.Web --no-launch-profile
-    # → http://127.0.0.1:5199  (Garage → Fahrzeug hinzufügen → Dashboard → "Simulator verbinden")
+## Features
 
-Die Web-App ist der voll funktionsfähige Testträger der App-UI: Garage-Karten (Foto, km-Stand
-mit Quelle, TÜV-/Service-Ampel), Live-Dashboard (Simulator oder WLAN-Adapter), Werte-Verlauf
-als Chart, automatisches Fahrtenbuch mit CSV-Export, Wartungsplaner, Tankbuch/Kosten und
-Sync mit Login gegen das Backend (Registrierung per Einladungscode, Offline-first, Multi-User
-mit striktem Besitzer-Scoping).
+- **Read-only by design.** `Elm327Client` enforces a strict command whitelist (SAE J1979 modes
+  01/02/03/07/09 plus harmless `AT` commands). Clearing fault codes (Mode 04), UDS writes, and
+  header spoofing (`ATSH`) are blocked at the transport layer, not just in the UI - see
+  [Safety](#safety).
+- **Automatic trip log** derived from live odometer/speed data, with CSV export.
+- **Maintenance planner** for inspection and service intervals.
+- **Fuel and cost tracking.**
+- **Continuous value history**: every polled live value is stored as a sample (not just during
+  trips), later compacted into per-minute min/avg/max aggregates.
+- **Offline-first sync**: local data is the source of truth; the backend uses Last-Write-Wins
+  with soft-delete tombstones. Every vehicle and its child entities are strictly scoped to their
+  owning user, enforced server-side.
+- **Multi-transport OBD**: Wi-Fi (TCP, e.g. `192.168.0.10:35000`) is implemented and tested
+  against a full vehicle simulator; Bluetooth Classic (Android) and BLE (Android + iOS) are next.
 
-## Projekte
+## Architecture
 
-- `src/CarApp.Core` — Domänenmodelle + Interfaces (abhängigkeitsfrei)
-- `src/CarApp.Obd` — ELM327-Client (Nur-Lese-Whitelist!), PID-Registry, Transporte
-  (WLAN fertig, Android-BT in CarApp.App), Fahrzeug-Simulator
-- `src/CarApp.Application` — LiveDataService (Polling + lückenlose Werte-Historie),
-  TripRecorder, OdometerTracker, MaintenanceCalculator, FuelStatistics, SyncService
-- `src/CarApp.Data` — dependency-freie JSON/JSONL-Persistenz hinter Core-Interfaces
-  (EF Core/SQLite später 1:1 austauschbar)
-- `src/CarApp.Server` — Backend: Konten (PBKDF2), Bearer-Tokens (gehasht), Sync-API (LWW),
-  Samples-API; Docker-tauglich, Daten via Config `DataDir`
-- `src/CarApp.Shared` — DTOs App ↔ Backend
-- `src/CarApp.Web` — komplette UI (Blazor Interactive Server, keine externen Abhängigkeiten)
-- `src/CarApp.App` — .NET-MAUI-Hülle (Android/iOS) inkl. Android-Bluetooth-Classic-Transport;
-  Build braucht MAUI-Workload → docs/MAUI-SETUP.md (nicht Teil der Solution-Datei)
-- `tests/CarApp.Tests` — xunit (OBD-Kern) · `tools/CarApp.TestRunner` — komplette Suite ohne NuGet
+```
+UI (Blazor components)  →  Application services  →  Repositories (Core interfaces)
+                                    ↓
+                          Obd layer (Elm327Client, PID registry, transports)
+```
 
-## Wichtige Hinweise
+- **UI is swappable.** Blazor components hold no logic or data access - they call
+  `CarApp.Application` services, which use repository interfaces defined in `CarApp.Core`
+  (implemented in `CarApp.Data`). Dependency direction is strict:
+  `App/Web → Application/Data/Obd → Core`; `Core` depends on nothing.
+- **Transport abstraction.** `IObdTransport` (connect/send/read/disconnect) is implemented by a
+  Wi-Fi TCP transport, an Android Bluetooth Classic transport, and a full vehicle simulator used
+  throughout the test suite - the OBD/PID parsing layer never talks to hardware directly.
 
-- Livewerte werden IMMER historisiert (ObdSample, auch außerhalb von Fahrten);
-  `CompactAsync` verdichtet alte Rohwerte zu Minuten-Aggregaten (Min/Avg/Max).
-- Sicherheit am Fahrzeug: `Elm327Client` sendet ausschließlich Lese-Befehle
-  (kein Mode 04/Fehlercode-Löschen, keine UDS-Writes, kein ATSH) — per Whitelist erzwungen und getestet.
-- Web-UI läuft als Blazor Interactive Server (Formulare = direkte C#-Methodenaufrufe,
-  Live-Dashboard über `PeriodicTimer`); in der MAUI-App sollen dieselben Komponenten künftig
-  über die BlazorWebView interaktiv laufen. RCL-Extraktion: docs/MAUI-SETUP.md.
-- Backend global erreichbar machen: Reverse Proxy (HTTPS!) oder WireGuard/Tailscale, siehe PROJEKTPLAN.md 2.2a.
+### Safety
+
+`Elm327Client` only ever sends whitelisted read commands. Fault-code clearing, UDS writes, and
+adapter header spoofing are rejected before they reach the transport, enforced by
+`CommandWhitelistTests` in the core test suite - this is a hard invariant, not a UI-level
+courtesy.
+
+## Project structure
+
+| Project | Purpose |
+|---|---|
+| `src/CarApp.Core` | Domain models + interfaces, dependency-free |
+| `src/CarApp.Obd` | ELM327 client (read-only whitelist), PID registry, transports (Wi-Fi done; Android Bluetooth lives in `CarApp.App`), vehicle simulator |
+| `src/CarApp.Application` | `LiveDataService` (polling + gap-free value history), `TripRecorder`, `OdometerTracker`, `MaintenanceCalculator`, `FuelStatistics`, `SyncService` |
+| `src/CarApp.Data` | Dependency-free JSON/JSONL persistence behind the `Core` interfaces (swappable 1:1 for EF Core/SQLite) |
+| `src/CarApp.Server` | Backend: accounts (PBKDF2), hashed bearer tokens, Last-Write-Wins sync API, samples API; Docker-ready |
+| `src/CarApp.Shared` | DTOs shared between app and backend |
+| `src/CarApp.Web` | Full UI, Blazor Interactive Server, no external JS dependencies |
+| `src/CarApp.App` | .NET MAUI shell (Android/iOS) incl. Android Bluetooth Classic transport - source only, needs the MAUI workload, not part of the solution file |
+| `tests/CarApp.Tests` | xUnit - OBD core (PID decoding, whitelist, client behavior) |
+| `tools/CarApp.TestRunner` | Full application/E2E/sync suite, dependency-free (compiles without NuGet) |
+
+## Getting started
+
+Requires the .NET 10 SDK.
+
+```bash
+# 1. Full test suite (100 tests, including end-to-end with a vehicle simulator + sync roundtrips)
+dotnet run --project tools/CarApp.TestRunner
+
+# 2. Start the backend (invite code defaults to CARAPP-2026)
+ASPNETCORE_URLS=http://0.0.0.0:5299 dotnet run --project src/CarApp.Server --no-launch-profile
+
+# 3. Start the web app and open it in a browser
+ASPNETCORE_URLS=http://127.0.0.1:5199 dotnet run --project src/CarApp.Web --no-launch-profile
+# → http://127.0.0.1:5199  (Garage → add vehicle → dashboard → "connect simulator")
+```
+
+`src/CarApp.Web/launchSettings.json` overrides `ASPNETCORE_URLS`, so `--no-launch-profile` is
+required for the commands above to take effect.
+
+## Testing
+
+Two complementary suites:
+
+- **`tools/CarApp.TestRunner`** (100 tests) - the primary suite. Dependency-free by design (this
+  project originated in an environment without NuGet access), covering the full stack: OBD
+  parsing, application services, JSON persistence, and end-to-end sync roundtrips between
+  multiple simulated devices and the real backend (ownership isolation, Last-Write-Wins
+  conflicts, soft-delete tombstones, sample push/query scoping).
+- **`tests/CarApp.Tests`** (xUnit) - focused unit tests for the OBD core: PID decoding against
+  real SAE J1979 byte responses, the read-only command whitelist, and `Elm327Client` behavior
+  against a scripted transport.
+
+Both run in CI on every push and pull request.
+
+## Roadmap
+
+- [ ] Build the MAUI shell for Android/iOS (workload install, add to the solution, test on a
+      real device) - currently shows a placeholder view.
+- [ ] Extract the Web UI into a shared Razor Class Library so MAUI gets the same interactivity
+      as the Web app.
+- [ ] Switch persistence from JSON to EF Core + SQLite (only `CarApp.Data` changes - the
+      repository interfaces stay the same).
+- [ ] Implement the BLE transport (skeleton exists; iOS can only use BLE or Wi-Fi, not Bluetooth
+      Classic).
+- [ ] Validate against a real ELM327 adapter and vehicle - everything so far has run against the
+      built-in simulator.
+- [ ] DTC diagnostics (read fault codes with plain-text descriptions); clearing codes (Mode 04)
+      stays blocked pending an explicit, confirmed product decision.
+- [ ] Harden the backend for access outside the home network (reverse proxy with HTTPS, or
+      WireGuard/Tailscale).
+
+## License
+
+AGPL-3.0. See [LICENSE](LICENSE).
