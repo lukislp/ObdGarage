@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using CarApp.Obd.Pids;
 
 namespace CarApp.Obd.Transport;
 
@@ -16,6 +17,10 @@ public sealed class SimulatedCar
     public double OdometerKm { get; set; } = 123_456.7;
     /// <summary>False simulates an older car without the standard odometer PID.</summary>
     public bool SupportsOdometer { get; set; } = true;
+    /// <summary>Stored (mode 03) diagnostic trouble codes - empty by default (healthy vehicle).</summary>
+    public List<string> Dtcs { get; set; } = [];
+    /// <summary>Pending (mode 07) diagnostic trouble codes - empty by default.</summary>
+    public List<string> PendingDtcs { get; set; } = [];
 }
 
 /// <summary>
@@ -84,6 +89,11 @@ public sealed class SimulatedCarTransport(SimulatedCar car) : IObdTransport
         if (cmd == "0902")
             return VinResponse();
 
+        if (cmd == "03")
+            return DtcResponse(0x43, Car.Dtcs);
+        if (cmd == "07")
+            return DtcResponse(0x47, Car.PendingDtcs);
+
         if (cmd.Length == 4 && cmd.StartsWith("01", StringComparison.Ordinal))
         {
             var pid = Convert.ToByte(cmd.Substring(2, 2), 16);
@@ -91,6 +101,21 @@ public sealed class SimulatedCarTransport(SimulatedCar car) : IObdTransport
         }
 
         return "?\r\r>";
+    }
+
+    private static string DtcResponse(byte modeEcho, IReadOnlyList<string> codes)
+    {
+        if (codes.Count == 0)
+            return "NO DATA\r\r>"; // matches how several real adapters answer "zero codes stored"
+
+        var bytes = new List<byte> { modeEcho };
+        foreach (var code in codes)
+        {
+            var (a, b) = Dtc.Encode(code);
+            bytes.Add(a);
+            bytes.Add(b);
+        }
+        return string.Join(' ', bytes.Select(x => x.ToString("X2"))) + "\r\r>";
     }
 
     private HashSet<byte> SupportedPids()
