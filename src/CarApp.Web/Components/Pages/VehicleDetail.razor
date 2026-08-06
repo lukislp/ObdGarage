@@ -49,6 +49,9 @@ else
         case "wartung":
             <WartungTab Vehicle="_vehicle" />
             break;
+        case "diagnose":
+            <DiagnoseTab Vehicle="_vehicle" />
+            break;
         case "kosten":
             <KostenTab Vehicle="_vehicle" />
             break;
@@ -66,6 +69,7 @@ else
         ("fahrten", "Fahrten"),
         ("wartung", "Wartung"),
         ("kosten", "Kosten"),
+        ("diagnose", "Diagnose"),
     ];
 
     [Parameter] public Guid Id { get; set; }
