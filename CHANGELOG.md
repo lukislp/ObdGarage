@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/lukislp/ObdGarage/compare/v1.1.0...v1.1.1) (2026-08-07)
+
+
+### Bug Fixes
+
+* add a live dashboard screenshot to the README ([4506202](https://github.com/lukislp/ObdGarage/commit/45062027649a6f9c369e17af104424b94dab650e))
+
 # [1.1.0](https://github.com/lukislp/ObdGarage/compare/v1.0.0...v1.1.0) (2026-08-07)
 
 
