@@ -23,6 +23,8 @@ offline-first, strict per-owner scoping).
 > real OBD2 adapter or vehicle**, and the mobile (MAUI) shell exists as source only. See
 > [Roadmap](#roadmap).
 
+![ObdGarage live dashboard, connected to the built-in vehicle simulator](docs/screenshot.png)
+
 ## Features
 
 - **Read-only by design.** `Elm327Client` enforces a strict command whitelist (SAE J1979 modes
