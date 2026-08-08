@@ -1,3 +1,11 @@
+## [1.1.3](https://github.com/lukislp/ObdGarage/compare/v1.1.2...v1.1.3) (2026-08-08)
+
+
+### Bug Fixes
+
+* re-trigger the release pipeline after a version/tag desync ([2ec0a8e](https://github.com/lukislp/ObdGarage/commit/2ec0a8edc8e70e9170c398264a5bbf400f8b61fc))
+* rename the leftover CARAPP-2026 default invite code to OBDGARAGE-2026 ([8787482](https://github.com/lukislp/ObdGarage/commit/878748223f0dd8fe09345610322d788c7cabeb1b))
+
 ## [1.1.1](https://github.com/lukislp/ObdGarage/compare/v1.1.0...v1.1.1) (2026-08-07)
 
 
