@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\ObdGarage.Application\ObdGarage.Application.csproj" />
     <ProjectReference Include="..\..\src\ObdGarage.Data\ObdGarage.Data.csproj" />
     <ProjectReference Include="..\..\src\ObdGarage.Web\ObdGarage.Web.csproj" />
+    <ProjectReference Include="..\..\src\ObdGarage.UI\ObdGarage.UI.csproj" />
   </ItemGroup>
 
 </Project>

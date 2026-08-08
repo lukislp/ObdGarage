@@ -7,7 +7,7 @@
     <!-- BlazorWebView hostet die Razor-UI; blazor.webview.js liefert MAUI selbst. -->
     <BlazorWebView x:Name="blazorWebView" HostPage="wwwroot/index.html">
         <BlazorWebView.RootComponents>
-            <RootComponent Selector="#app" ComponentType="{x:Type components:Main}" />
+            <RootComponent Selector="#app" ComponentType="{x:Type components:Routes}" />
         </BlazorWebView.RootComponents>
     </BlazorWebView>
 

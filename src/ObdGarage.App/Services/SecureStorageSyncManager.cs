@@ -1,27 +1,22 @@
-using System.Text.Json;
 using ObdGarage.Application;
 using ObdGarage.Core;
+using Microsoft.Maui.Storage;
 
-namespace ObdGarage.Web.Services;
+namespace ObdGarage.App.Services;
 
 /// <summary>
-/// Web-side <see cref="ISyncManager"/>: keeps the token + server URL in
-/// <c>data/sync-auth.json</c> (survives app restarts), creates the HttpClient
-/// matching the server URL, and on first login switches the OwnerUserId of locally
-/// created vehicles over to the server user id — otherwise the server rejects them on push.
+/// MAUI-side <see cref="ISyncManager"/>: keeps the token + server URL in
+/// <see cref="SecureStorage"/> (OS keychain/keystore, survives app restarts) instead of a plain
+/// file (see the Web project's <c>SyncManager</c> for the file-based equivalent). Behaviorally
+/// identical otherwise - same HttpClient-per-server-URL, first-login vehicle-ownership migration.
 /// </summary>
-public sealed class SyncManager : ISyncManager
+public sealed class SecureStorageSyncManager : ISyncManager
 {
-    private sealed class AuthFile
-    {
-        public string? ServerUrl { get; set; }
-        public string? Email { get; set; }
-        public string? Token { get; set; }
-        public Guid? UserId { get; set; }
-        public DateTimeOffset? LastSyncAt { get; set; }
-    }
-
-    private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
+    private const string ServerUrlKey = "sync_server_url";
+    private const string EmailKey = "sync_email";
+    private const string TokenKey = "sync_token";
+    private const string UserIdKey = "sync_user_id";
+    private const string LastSyncAtKey = "sync_last_sync_at";
 
     private readonly ISyncRepository<Vehicle> _vehicles;
     private readonly ISyncRepository<AdapterProfile> _adapterProfiles;
@@ -33,15 +28,18 @@ public sealed class SyncManager : ISyncManager
     private readonly IObdSampleStore _sampleStore;
     private readonly IClock _clock;
     private readonly AppState _state;
-    private readonly string _authFilePath;
     private readonly string _syncStateFilePath;
     private readonly SemaphoreSlim _lock = new(1, 1);
 
     private HttpClient? _http;
     private SyncService? _service;
-    private AuthFile _auth = new();
+    private string? _serverUrl;
+    private string? _email;
+    private string? _token;
+    private Guid? _userId;
+    private DateTimeOffset? _lastSyncAt;
 
-    public SyncManager(
+    public SecureStorageSyncManager(
         ISyncRepository<Vehicle> vehicles,
         ISyncRepository<AdapterProfile> adapterProfiles,
         ISyncRepository<OdometerReading> odometerReadings,
@@ -52,7 +50,7 @@ public sealed class SyncManager : ISyncManager
         IObdSampleStore sampleStore,
         IClock clock,
         AppState state,
-        string dataDir)
+        string syncStateFilePath)
     {
         _vehicles = vehicles;
         _adapterProfiles = adapterProfiles;
@@ -64,15 +62,19 @@ public sealed class SyncManager : ISyncManager
         _sampleStore = sampleStore;
         _clock = clock;
         _state = state;
-        _authFilePath = Path.Combine(dataDir, "sync-auth.json");
-        _syncStateFilePath = Path.Combine(dataDir, "sync-state.json");
-        LoadAuth();
+        _syncStateFilePath = syncStateFilePath;
+
+        // Matches the blocking-load-at-startup pattern MauiProgram.cs already uses for DB
+        // migration/JSON import - SecureStorage's API is async-only, but ISyncManager's
+        // properties (shared with the Web host) are synchronous, and nothing needs sync state
+        // before construction returns anyway.
+        LoadAuthAsync().GetAwaiter().GetResult();
     }
 
-    public bool IsLoggedIn => _auth.Token is not null && _auth.UserId is not null;
-    public string? Email => _auth.Email;
-    public DateTimeOffset? LastSyncAt => _auth.LastSyncAt;
-    public string ServerUrl => _auth.ServerUrl ?? _state.SyncServerUrl ?? SyncService.DefaultServerUrl;
+    public bool IsLoggedIn => _token is not null && _userId is not null;
+    public string? Email => _email;
+    public DateTimeOffset? LastSyncAt => _lastSyncAt;
+    public string ServerUrl => _serverUrl ?? _state.SyncServerUrl ?? SyncService.DefaultServerUrl;
 
     public async Task<AuthResult> RegisterAsync(string serverUrl, string email, string password, string inviteCode)
     {
@@ -83,11 +85,11 @@ public sealed class SyncManager : ISyncManager
             var result = await service.RegisterAsync(email, password, inviteCode);
             if (result.Success)
             {
-                _auth.ServerUrl = serverUrl;
-                _auth.Email = email;
+                _serverUrl = serverUrl;
+                _email = email;
                 _state.SyncServerUrl = serverUrl;
                 _state.SyncEmail = email;
-                SaveAuth();
+                await SaveAuthAsync();
             }
             return result;
         }
@@ -108,10 +110,8 @@ public sealed class SyncManager : ISyncManager
             if (!result.Success)
                 return result;
 
-            // Persist auth only after migration succeeds - otherwise a failure here would
-            // leave IsLoggedIn reporting true (auth already on disk) while the caller was
-            // told the login failed and _state.CurrentUserId never switched over, silently
-            // stranding vehicles under the old local owner.
+            // Same ordering as the Web host: only persist auth once the ownership migration
+            // has actually succeeded, so IsLoggedIn never reports true for a failed login.
             try
             {
                 await MigrateVehicleOwnerAsync(service.UserId);
@@ -121,13 +121,13 @@ public sealed class SyncManager : ISyncManager
                 return new AuthResult(false, ex.Message);
             }
 
-            _auth.ServerUrl = serverUrl;
-            _auth.Email = email;
-            _auth.Token = service.Token;
-            _auth.UserId = service.UserId;
+            _serverUrl = serverUrl;
+            _email = email;
+            _token = service.Token;
+            _userId = service.UserId;
             _state.SyncServerUrl = serverUrl;
             _state.SyncEmail = email;
-            SaveAuth();
+            await SaveAuthAsync();
 
             return result;
         }
@@ -150,9 +150,9 @@ public sealed class SyncManager : ISyncManager
             var result = await service.SyncAsync();
             if (result.Success)
             {
-                _auth.LastSyncAt = _clock.UtcNow;
-                _state.LastSyncAt = _auth.LastSyncAt;
-                SaveAuth();
+                _lastSyncAt = _clock.UtcNow;
+                _state.LastSyncAt = _lastSyncAt;
+                await SaveAuthAsync();
             }
             return result;
         }
@@ -168,25 +168,18 @@ public sealed class SyncManager : ISyncManager
         await _lock.WaitAsync();
         try
         {
-            _auth.Token = null;
-            _auth.UserId = null;
-            SaveAuth();
+            _token = null;
+            _userId = null;
+            await SaveAuthAsync();
             _service = null;
             _http?.Dispose();
             _http = null;
 
-            // Without this, AppState.CurrentUserId keeps pointing at the server user after
-            // logout, so any vehicle created afterwards is silently attributed to an account
-            // the app is no longer authenticated as, instead of the local user.
             _state.CurrentUserId = AppState.LocalUserId;
         }
         finally { _lock.Release(); }
     }
 
-    /// <summary>
-    /// One-time reassignment on first login: all vehicles belonging to the implicit local
-    /// user now belong to the server account (otherwise they get rejected on push).
-    /// </summary>
     private async Task MigrateVehicleOwnerAsync(Guid serverUserId)
     {
         foreach (var vehicle in await _vehicles.GetAllIncludingDeletedAsync())
@@ -201,7 +194,6 @@ public sealed class SyncManager : ISyncManager
         _state.CurrentUserId = serverUserId;
     }
 
-    /// <summary>HttpClient + SyncService matching the server URL (rebuilt when the URL changes).</summary>
     private SyncService GetService(string serverUrl)
     {
         var baseUrl = serverUrl.Trim().TrimEnd('/') + "/";
@@ -215,46 +207,48 @@ public sealed class SyncManager : ISyncManager
             {
                 TokenChanged = (token, userId) =>
                 {
-                    _auth.Token = token;
-                    _auth.UserId = userId;
-                    SaveAuth();
+                    _token = token;
+                    _userId = userId;
+                    SaveAuthAsync().GetAwaiter().GetResult();
                 },
             };
-            if (_auth is { Token: { } token, UserId: { } userId })
+            if (_token is { } token && _userId is { } userId)
                 _service.UseToken(token, userId);
         }
         return _service;
     }
 
-    private void LoadAuth()
+    private async Task LoadAuthAsync()
     {
-        try
-        {
-            if (File.Exists(_authFilePath))
-                _auth = JsonSerializer.Deserialize<AuthFile>(File.ReadAllText(_authFilePath), Json) ?? new AuthFile();
-        }
-        catch (JsonException)
-        {
-            _auth = new AuthFile();
-        }
+        _serverUrl = await SecureStorage.Default.GetAsync(ServerUrlKey);
+        _email = await SecureStorage.Default.GetAsync(EmailKey);
+        _token = await SecureStorage.Default.GetAsync(TokenKey);
 
-        _state.SyncServerUrl = _auth.ServerUrl;
-        _state.SyncEmail = _auth.Email;
-        _state.LastSyncAt = _auth.LastSyncAt;
-        if (_auth.UserId is { } userId)
-            _state.CurrentUserId = userId; // Login survives the restart
+        var userIdText = await SecureStorage.Default.GetAsync(UserIdKey);
+        _userId = Guid.TryParse(userIdText, out var userId) ? userId : null;
+
+        var lastSyncText = await SecureStorage.Default.GetAsync(LastSyncAtKey);
+        _lastSyncAt = DateTimeOffset.TryParse(lastSyncText, out var lastSync) ? lastSync : null;
+
+        _state.SyncServerUrl = _serverUrl;
+        _state.SyncEmail = _email;
+        _state.LastSyncAt = _lastSyncAt;
+        if (_userId is { } uid)
+            _state.CurrentUserId = uid; // Login survives the restart
     }
 
     /// <summary>
-    /// Atomic write via tmp-file + rename (mirrors JsonFileRepository): a direct WriteAllText
-    /// truncates the file before writing the new content, so a crash/power loss mid-write
-    /// (or two overlapping writers) can leave sync-auth.json empty or half-written - which
-    /// LoadAuth would then silently treat as "logged out", losing the login state.
+    /// SecureStorage has no "remove key" no-op-if-clear behavior across platforms consistently,
+    /// so a null value is stored as an empty string rather than calling Remove - GetAsync
+    /// returning "" is treated the same as null everywhere it's read back (see LoadAuthAsync's
+    /// Guid.TryParse/DateTimeOffset.TryParse, which already fail closed to null on "").
     /// </summary>
-    private void SaveAuth()
+    private async Task SaveAuthAsync()
     {
-        var tmp = _authFilePath + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(_auth, Json));
-        File.Move(tmp, _authFilePath, overwrite: true);
+        await SecureStorage.Default.SetAsync(ServerUrlKey, _serverUrl ?? "");
+        await SecureStorage.Default.SetAsync(EmailKey, _email ?? "");
+        await SecureStorage.Default.SetAsync(TokenKey, _token ?? "");
+        await SecureStorage.Default.SetAsync(UserIdKey, _userId?.ToString() ?? "");
+        await SecureStorage.Default.SetAsync(LastSyncAtKey, _lastSyncAt?.ToString("O") ?? "");
     }
 }

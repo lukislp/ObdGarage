@@ -2,7 +2,7 @@ using System.Globalization;
 using ObdGarage.Application;
 using ObdGarage.Obd.Pids;
 
-namespace ObdGarage.Web.Services;
+namespace ObdGarage.UI;
 
 /// <summary>Formatting/parsing helpers for the UI (German display, robust form parsing).</summary>
 public static class Fmt

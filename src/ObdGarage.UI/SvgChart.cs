@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using ObdGarage.Core;
 
-namespace ObdGarage.Web.Services;
+namespace ObdGarage.UI;
 
 /// <summary>
 /// Server-side rendered SVG line chart for the history view:

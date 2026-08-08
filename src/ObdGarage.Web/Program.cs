@@ -59,7 +59,7 @@ builder.Services.AddSingleton<IObdSampleStore, EfObdSampleStore>();
 builder.Services.AddScoped<AppState>();
 builder.Services.AddSingleton<OdometerTracker>();
 builder.Services.AddSingleton<ConnectionManager>();
-builder.Services.AddScoped(sp => new SyncManager(
+builder.Services.AddScoped<ISyncManager>(sp => new SyncManager(
     sp.GetRequiredService<ISyncRepository<Vehicle>>(),
     sp.GetRequiredService<ISyncRepository<AdapterProfile>>(),
     sp.GetRequiredService<ISyncRepository<OdometerReading>>(),
@@ -92,7 +92,14 @@ app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages:
 app.UseAntiforgery();
 
 app.MapStaticAssets();
-app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
+// AddAdditionalAssemblies is required at the endpoint-mapping level too, not just on the
+// client-side <Router> in Routes.razor - without it, ASP.NET Core's own routing middleware
+// never learns that ObdGarage.UI's @page components exist at all, and every route 404s before
+// Blazor ever gets a chance to render (confirmed live: empty body, real HTTP 404, not the
+// NotFoundPage content).
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode()
+    .AddAdditionalAssemblies(typeof(ObdGarage.UI.Pages.Home).Assembly);
 
 app.MapObdGarageEndpoints(photosDir);
 

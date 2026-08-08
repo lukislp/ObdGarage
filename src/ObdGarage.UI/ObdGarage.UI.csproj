@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ObdGarage.Core\ObdGarage.Core.csproj" />
+    <ProjectReference Include="..\ObdGarage.Application\ObdGarage.Application.csproj" />
+    <ProjectReference Include="..\ObdGarage.Obd\ObdGarage.Obd.csproj" />
+    <ProjectReference Include="..\ObdGarage.Shared\ObdGarage.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

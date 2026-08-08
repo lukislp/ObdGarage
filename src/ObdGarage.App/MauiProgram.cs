@@ -1,4 +1,5 @@
 using System.Globalization;
+using ObdGarage.App.Services;
 using ObdGarage.Application;
 using ObdGarage.Core;
 using ObdGarage.Data;
@@ -12,16 +13,6 @@ namespace ObdGarage.App;
 
 public static class MauiProgram
 {
-    /// <summary>
-    /// Base URL of the home backend (ObdGarage.Server) for sync. On the home network, enter the
-    /// server's IP/hostname — default port per
-    /// src/ObdGarage.Server/Properties/launchSettings.json: 5235 (http profile).
-    /// Note: localhost does not work from a phone; the server must listen on
-    /// 0.0.0.0 (docs/MAUI-SETUP.md, section "Backend on the home network").
-    /// This will later move into a settings page (Preferences/SecureStorage).
-    /// </summary>
-    private const string DefaultSyncBaseUrl = "http://192.168.0.100:5235/";
-
     public static MauiApp CreateMauiApp()
     {
         // German display (numbers/dates) — identical to the web app (ObdGarage.Web/Program.cs).
@@ -45,7 +36,8 @@ public static class MauiProgram
         // directory here is the platform's app sandbox directory.
         // ------------------------------------------------------------------
         var dataDir = FileSystem.AppDataDirectory;
-        Directory.CreateDirectory(Path.Combine(dataDir, "photos"));
+        var photosDir = Path.Combine(dataDir, "photos");
+        Directory.CreateDirectory(photosDir);
 
         var dbPath = Path.Combine(dataDir, "obdgarage.db");
         builder.Services.AddSingleton<IDbContextFactory<ObdGarageDbContext>>(new SqliteDbContextFactory(dbPath));
@@ -60,34 +52,32 @@ public static class MauiProgram
         RegisterRepository<Expense>(builder.Services);
         builder.Services.AddSingleton<IObdSampleStore, EfObdSampleStore>();
 
+        builder.Services.AddSingleton(new PhotoStorage(photosDir));
         builder.Services.AddSingleton<OdometerTracker>();
+        builder.Services.AddSingleton<ConnectionManager>();
 
-        // Sync against the home backend (Phase 6): HttpClient + SyncService.
-        // Offline-first — if the server is unreachable, SyncService returns
-        // clean result objects instead of exceptions; the app keeps working locally.
-        builder.Services.AddSingleton(sp =>
-        {
-            var http = new HttpClient { BaseAddress = new Uri(DefaultSyncBaseUrl) };
-            return new SyncService(
-                http,
-                sp.GetRequiredService<ISyncRepository<Vehicle>>(),
-                sp.GetRequiredService<ISyncRepository<AdapterProfile>>(),
-                sp.GetRequiredService<ISyncRepository<OdometerReading>>(),
-                sp.GetRequiredService<ISyncRepository<Trip>>(),
-                sp.GetRequiredService<ISyncRepository<MaintenanceTask>>(),
-                sp.GetRequiredService<ISyncRepository<FuelEntry>>(),
-                sp.GetRequiredService<ISyncRepository<Expense>>(),
-                sp.GetRequiredService<IObdSampleStore>(),
-                sp.GetRequiredService<IClock>(),
-                Path.Combine(dataDir, "sync-state.json"));
-        });
+        // AppState is a singleton here (unlike Web's per-circuit Scoped) - MAUI has a single
+        // long-lived window/session, not multiple browser tabs that could stomp on each other's
+        // login state (see the Web host's Program.cs for the multi-tab reasoning this doesn't
+        // apply to).
+        builder.Services.AddSingleton<AppState>();
 
-        // NOTE ON UI: The web app's Razor components (ObdGarage.Web/Components)
-        // will move in a later step into a shared Razor Class Library
-        // (ObdGarage.UI) that is then referenced by both Web AND MAUI — concrete
-        // instructions in docs/MAUI-SETUP.md, section "Shared UI (ObdGarage.UI)".
-        // Until then, Components/Main.razor serves as a placeholder start page with
-        // a connection test (simulator + WiFi adapter).
+        // ISyncManager: SecureStorage-backed on this host (see SecureStorageSyncManager) instead
+        // of Web's sync-auth.json file - same shared UI (Settings.razor, ObdGarage.UI) drives
+        // both without knowing which. Server URL is entered once on the Settings page and
+        // persisted from then on - no more hardcoded LAN IP baked into the app.
+        builder.Services.AddSingleton<ISyncManager>(sp => new SecureStorageSyncManager(
+            sp.GetRequiredService<ISyncRepository<Vehicle>>(),
+            sp.GetRequiredService<ISyncRepository<AdapterProfile>>(),
+            sp.GetRequiredService<ISyncRepository<OdometerReading>>(),
+            sp.GetRequiredService<ISyncRepository<Trip>>(),
+            sp.GetRequiredService<ISyncRepository<MaintenanceTask>>(),
+            sp.GetRequiredService<ISyncRepository<FuelEntry>>(),
+            sp.GetRequiredService<ISyncRepository<Expense>>(),
+            sp.GetRequiredService<IObdSampleStore>(),
+            sp.GetRequiredService<IClock>(),
+            sp.GetRequiredService<AppState>(),
+            Path.Combine(dataDir, "sync-state.json")));
 
         var app = builder.Build();
 

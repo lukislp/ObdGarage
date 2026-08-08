@@ -1,6 +1,6 @@
 @page "/settings"
 @inject AppState State
-@inject SyncManager Sync
+@inject ISyncManager Sync
 
 <PageTitle>Einstellungen &ndash; ObdGarage</PageTitle>
 
@@ -48,7 +48,7 @@
     </p>
     <div class="form-grid">
         <label>Server-URL
-            <input @bind="_serverUrl" type="url" placeholder="@SyncManager.DefaultServerUrl" />
+            <input @bind="_serverUrl" type="url" placeholder="@SyncService.DefaultServerUrl" />
         </label>
         <label>E-Mail
             <input @bind="_email" type="email" placeholder="du@beispiel.de" />
@@ -89,7 +89,7 @@
 
     protected override void OnInitialized()
     {
-        _serverUrl = State.SyncServerUrl ?? SyncManager.DefaultServerUrl;
+        _serverUrl = State.SyncServerUrl ?? SyncService.DefaultServerUrl;
         _email = State.SyncEmail;
     }
 
@@ -97,7 +97,7 @@
     {
         _error = null;
         _message = null;
-        var serverUrl = NullIfEmpty(_serverUrl) ?? SyncManager.DefaultServerUrl;
+        var serverUrl = NullIfEmpty(_serverUrl) ?? SyncService.DefaultServerUrl;
         var email = NullIfEmpty(_email);
         if (email is null || _password.Length == 0)
         {
@@ -116,7 +116,7 @@
     {
         _error = null;
         _message = null;
-        var serverUrl = NullIfEmpty(_serverUrl) ?? SyncManager.DefaultServerUrl;
+        var serverUrl = NullIfEmpty(_serverUrl) ?? SyncService.DefaultServerUrl;
         var email = NullIfEmpty(_email);
         if (email is null || _password.Length == 0)
         {

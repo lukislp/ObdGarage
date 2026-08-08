@@ -18,7 +18,7 @@
     <h3>Kilometerstand</h3>
     <p>
         Aktuell: <strong>@Fmt.Km(Vehicle.LastKnownOdometerKm)</strong>
-        <span class="badge badge-neutral">@Components.Pages.Home.SourceLabel(Vehicle.OdometerSource)</span>
+        <span class="badge badge-neutral">@ObdGarage.UI.Pages.Home.SourceLabel(Vehicle.OdometerSource)</span>
     </p>
     <div class="odo-actions">
         <div class="inline-form">
@@ -48,7 +48,7 @@
             {
                 <li class="task-item">
                     <div class="task-main">
-                        <span class="badge @Components.Pages.Home.BadgeClass(s.Badge)">@BadgeText(s)</span>
+                        <span class="badge @ObdGarage.UI.Pages.Home.BadgeClass(s.Badge)">@BadgeText(s)</span>
                         <strong>@s.Task.Title</strong>
                         <span class="muted small">@TypeLabel(s.Task.Type) &middot; @IntervalText(s.Task)</span>
                     </div>

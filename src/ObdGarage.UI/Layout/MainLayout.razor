@@ -1,0 +1,21 @@
+@inherits LayoutComponentBase
+@* Unused directly - injecting it here forces the host's ISyncManager (and its scoped AppState)
+   construction as early as possible, before any routed page underneath this layout reads
+   AppState.CurrentUserId. Each host's ISyncManager implementation loads whichever account was
+   last persisted (sync-auth.json on Web, SecureStorage on MAUI) as part of construction, so a
+   fresh session still opens "logged in" as expected. *@
+@inject ISyncManager Sync
+
+<div class="shell">
+    <header class="topbar">
+        <a class="brand" href="/">Obd<span>Garage</span></a>
+        <nav class="topnav">
+            <a href="/">Garage</a>
+            <a href="/settings">Einstellungen</a>
+        </nav>
+    </header>
+    <main class="content">
+        @Body
+    </main>
+    <footer class="footer">ObdGarage &mdash; OBD2-Fahrzeug-App</footer>
+</div>
