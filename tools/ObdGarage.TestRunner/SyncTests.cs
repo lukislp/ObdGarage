@@ -216,6 +216,52 @@ public static class SyncTests
                 [new ObdSample { VehicleId = vehicle.Id, PidKey = "rpm", Timestamp = now, Value = 1 }]);
             check("Fremde Samples werden verworfen", bForeignSamples is { Accepted: 0, Rejected: 1 });
 
+            // --- PushPendingSamplesAsync: per-vehicle watermark, retried until reachable --------
+            // Own client/user (not `a`) so PushPendingSamplesAsync's first-ever run for this
+            // vehicle isn't also re-iterating `vehicle`'s samples pushed earlier via the direct
+            // PushSamplesAsync/PushLocalSamplesAsync calls above - those exist on the server
+            // under stable Ids already, and this method has no way to know that (by design, it
+            // only tracks its OWN watermark) without an isolated vehicle to test against.
+            var c = NewClient(baseUrl);
+            dirs.Add(c.Dir);
+            await c.Sync.RegisterAsync("carol@example.com", "geheim789", "OBDGARAGE-2026");
+            await c.Sync.LoginAsync("carol@example.com", "geheim789");
+            var pendingVehicle = new Vehicle { Name = "Pending-Test-Auto", OwnerUserId = c.Sync.UserId };
+            await c.Vehicles.UpsertAsync(pendingVehicle);
+            await c.Sync.SyncAsync(); // push the vehicle itself first (samples reference it by VehicleId)
+
+            await c.Samples.AppendBatchAsync(
+                [new ObdSample { VehicleId = pendingVehicle.Id, PidKey = "voltage", Timestamp = now, Value = 13.8 }]);
+            var pending1 = await c.Sync.PushPendingSamplesAsync();
+            check($"Erster PushPendingSamplesAsync-Lauf pusht das neue Sample (akzeptiert: {pending1.Accepted})",
+                pending1.Accepted == 1);
+
+            var pending2 = await c.Sync.PushPendingSamplesAsync();
+            check($"Zweiter Lauf ohne neue Daten pusht nichts erneut (akzeptiert: {pending2.Accepted})",
+                pending2.Accepted == 0);
+
+            // A fresh UtcNow here, NOT now.AddSeconds(1) - PushPendingSamplesAsync's own "to"
+            // bound is the REAL current time at call time, and real wall-clock time between the
+            // two calls above is well under a second, so an offset added to the stale `now`
+            // would land in the future relative to that "to" and get silently excluded (hit
+            // live while writing this test - not a production bug, a test-timing mistake).
+            await c.Samples.AppendBatchAsync(
+                [new ObdSample { VehicleId = pendingVehicle.Id, PidKey = "voltage", Timestamp = DateTimeOffset.UtcNow, Value = 13.9 }]);
+            var pending3 = await c.Sync.PushPendingSamplesAsync();
+            check($"Nur das neu hinzugekommene Sample wird gepusht (akzeptiert: {pending3.Accepted})",
+                pending3.Accepted == 1);
+
+            var offlineVehicleClient = NewClient("http://127.0.0.1:1"); // nothing listening there
+            dirs.Add(offlineVehicleClient.Dir);
+            offlineVehicleClient.Sync.UseToken("dummy-token", Guid.NewGuid());
+            var offlineVehicle = new Vehicle { Name = "Offline-Auto", OwnerUserId = offlineVehicleClient.Sync.UserId };
+            await offlineVehicleClient.Vehicles.UpsertAsync(offlineVehicle);
+            await offlineVehicleClient.Samples.AppendBatchAsync(
+                [new ObdSample { VehicleId = offlineVehicle.Id, PidKey = "rpm", Timestamp = now, Value = 800 }]);
+            var offlinePending = await offlineVehicleClient.Sync.PushPendingSamplesAsync();
+            check("Offline: PushPendingSamplesAsync liefert leeres Ergebnis statt Crash",
+                offlinePending is { Accepted: 0, Rejected: 0 });
+
             // --- Offline robustness ---------------------------------------------------------
             var offline = NewClient("http://127.0.0.1:1"); // nothing is listening there
             dirs.Add(offline.Dir);

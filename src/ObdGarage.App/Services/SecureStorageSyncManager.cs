@@ -150,6 +150,11 @@ public sealed class SecureStorageSyncManager : ISyncManager
             var result = await service.SyncAsync();
             if (result.Success)
             {
+                // See the Web host's SyncManager for why this is folded in here rather than
+                // exposed as a separate UI action - same shared Settings.razor page either way.
+                var samples = await service.PushPendingSamplesAsync();
+                result = result with { Pushed = result.Pushed + samples.Accepted };
+
                 _lastSyncAt = _clock.UtcNow;
                 _state.LastSyncAt = _lastSyncAt;
                 await SaveAuthAsync();

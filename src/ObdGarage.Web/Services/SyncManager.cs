@@ -150,6 +150,14 @@ public sealed class SyncManager : ISyncManager
             var result = await service.SyncAsync();
             if (result.Success)
             {
+                // OBD samples are never part of the entity sync above (own endpoint, own
+                // watermark - see SyncService.PushPendingSamplesAsync) - only attempted once the
+                // server is confirmed reachable, so this never turns a real offline failure into
+                // a misleading "partial success". Folded into Pushed so the existing "X gepusht"
+                // message already covers it without a separate UI element.
+                var samples = await service.PushPendingSamplesAsync();
+                result = result with { Pushed = result.Pushed + samples.Accepted };
+
                 _auth.LastSyncAt = _clock.UtcNow;
                 _state.LastSyncAt = _auth.LastSyncAt;
                 SaveAuth();

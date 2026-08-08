@@ -164,6 +164,57 @@ public sealed class SyncService(
         return batch.Count == 0 ? new SyncPushResponse(0, 0, []) : await PushSamplesAsync(batch, ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Pushes every not-yet-pushed sample for every local vehicle, tracking a per-vehicle
+    /// watermark (in the same small state file as <see cref="LoadLastSync"/>) so repeated calls
+    /// - e.g. a retry once connectivity to the home server returns - never re-send samples the
+    /// server has already accepted. Safe to call any time, including when offline: on failure
+    /// (server unreachable) a vehicle's watermark is simply left untouched and that vehicle's
+    /// samples are retried on the next call, with no data loss and no duplicate pushes.
+    /// </summary>
+    public async Task<SyncPushResponse> PushPendingSamplesAsync(CancellationToken ct = default)
+    {
+        if (Token is null || sampleStore is null)
+            return new SyncPushResponse(0, 0, []);
+
+        var state = LoadState();
+        var totalAccepted = 0;
+        var totalRejected = 0;
+        var allRejectedIds = new List<Guid>();
+        var now = clock.UtcNow;
+
+        foreach (var vehicle in await vehicles.GetAllIncludingDeletedAsync(ct).ConfigureAwait(false))
+        {
+            var from = state.LastSamplePushByVehicle.TryGetValue(vehicle.Id, out var last)
+                ? last
+                : DateTimeOffset.MinValue;
+
+            var batch = await sampleStore.QueryAsync(vehicle.Id, null, from, now, ct).ConfigureAwait(false);
+            if (batch.Count == 0)
+                continue;
+
+            var result = await PushSamplesAsync(batch, ct).ConfigureAwait(false);
+            if (result is null)
+                continue; // offline/error - watermark stays put, retried on the next call
+
+            totalAccepted += result.Accepted;
+            totalRejected += result.Rejected;
+            allRejectedIds.AddRange(result.RejectedIds);
+
+            // Advance past everything in this batch regardless of accept/reject - samples have
+            // no per-item retry state to flip (unlike PushAsync<T>'s entities), so a permanently
+            // rejected sample (e.g. ownership mismatch) would otherwise be resent forever.
+            // +1 tick: QueryAsync's "from" bound is inclusive (Timestamp >= from), so watermark
+            // == the last pushed sample's own timestamp would re-select and re-push that exact
+            // sample next time - which the server then rejects with a UNIQUE constraint failure
+            // on its Id (confirmed live via ObdGarage.TestRunner before this fix).
+            state.LastSamplePushByVehicle[vehicle.Id] = batch.Max(s => s.Timestamp).AddTicks(1);
+        }
+
+        SaveState(state);
+        return new SyncPushResponse(totalAccepted, totalRejected, allRejectedIds);
+    }
+
     /// <summary>History query against the server. Null if there's no connection or no access.</summary>
     public async Task<IReadOnlyList<ObdSample>?> QuerySamplesAsync(Guid vehicleId, string? pidKey,
         DateTimeOffset? from = null, DateTimeOffset? to = null, CancellationToken ct = default)
@@ -257,28 +308,42 @@ public sealed class SyncService(
         }
     }
 
-    // --- Timestamp of the last sync (small JSON file) ------------------------------
+    // --- Sync state (small JSON file: last entity sync + per-vehicle sample watermarks) ---
 
     private sealed class SyncStateFile
     {
         public DateTimeOffset LastSync { get; set; }
+
+        /// <summary>Timestamp of the newest sample already pushed, per vehicle - absent/older
+        /// entries mean "not pushed yet". Missing entirely on state files written before this
+        /// field existed - deserializes to an empty dictionary, not a crash.</summary>
+        public Dictionary<Guid, DateTimeOffset> LastSamplePushByVehicle { get; set; } = new();
     }
 
-    private DateTimeOffset LoadLastSync()
+    private DateTimeOffset LoadLastSync() => LoadState().LastSync;
+
+    private void SaveLastSync(DateTimeOffset ts)
+    {
+        var state = LoadState();
+        state.LastSync = ts;
+        SaveState(state);
+    }
+
+    private SyncStateFile LoadState()
     {
         try
         {
             if (!File.Exists(syncStateFile))
-                return DateTimeOffset.MinValue;
-            var state = JsonSerializer.Deserialize<SyncStateFile>(File.ReadAllText(syncStateFile), Json);
-            return state?.LastSync ?? DateTimeOffset.MinValue;
+                return new SyncStateFile();
+            return JsonSerializer.Deserialize<SyncStateFile>(File.ReadAllText(syncStateFile), Json)
+                ?? new SyncStateFile();
         }
         catch (JsonException)
         {
-            return DateTimeOffset.MinValue;
+            return new SyncStateFile();
         }
     }
 
-    private void SaveLastSync(DateTimeOffset ts) =>
-        File.WriteAllText(syncStateFile, JsonSerializer.Serialize(new SyncStateFile { LastSync = ts }, Json));
+    private void SaveState(SyncStateFile state) =>
+        File.WriteAllText(syncStateFile, JsonSerializer.Serialize(state, Json));
 }
