@@ -1,0 +1,9 @@
+@* Mirrors ObdGarage.Web/Components/Routes.razor - pages/layout live in ObdGarage.UI, shared
+   with the Web host. This is the MAUI-side Router root (see MainPage.xaml's RootComponent). *@
+<Router AppAssembly="typeof(ObdGarage.UI.Pages.Home).Assembly"
+        NotFoundPage="typeof(ObdGarage.UI.Pages.NotFound)">
+    <Found Context="routeData">
+        <RouteView RouteData="routeData" DefaultLayout="typeof(ObdGarage.UI.Layout.MainLayout)" />
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>

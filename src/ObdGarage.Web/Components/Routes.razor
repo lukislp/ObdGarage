@@ -1,6 +1,10 @@
-﻿<Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+﻿@* Pages/layout live in ObdGarage.UI now (shared with MAUI) - AdditionalAssemblies is what makes
+   the router find @page-routable components outside this project's own assembly. *@
+<Router AppAssembly="typeof(Program).Assembly"
+        AdditionalAssemblies="new[] { typeof(ObdGarage.UI.Pages.Home).Assembly }"
+        NotFoundPage="typeof(ObdGarage.UI.Pages.NotFound)">
     <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+        <RouteView RouteData="routeData" DefaultLayout="typeof(ObdGarage.UI.Layout.MainLayout)" />
         <FocusOnNavigate RouteData="routeData" Selector="h1" />
     </Found>
 </Router>

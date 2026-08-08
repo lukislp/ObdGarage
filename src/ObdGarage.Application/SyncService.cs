@@ -33,6 +33,9 @@ public sealed class SyncService(
 {
     private static readonly JsonSerializerOptions Json = JsonSerializerOptions.Web;
 
+    /// <summary>Default home-server URL, used when a host hasn't configured its own.</summary>
+    public const string DefaultServerUrl = "http://localhost:5299";
+
     public string? Token { get; private set; }
     public Guid UserId { get; private set; }
 

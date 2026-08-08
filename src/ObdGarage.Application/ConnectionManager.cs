@@ -4,7 +4,7 @@ using ObdGarage.Core;
 using ObdGarage.Obd;
 using ObdGarage.Obd.Transport;
 
-namespace ObdGarage.Web.Services;
+namespace ObdGarage.Application;
 
 /// <summary>Snapshot of a vehicle's live data (for /api/live/{id} and the UI).</summary>
 public sealed record LiveSnapshot(

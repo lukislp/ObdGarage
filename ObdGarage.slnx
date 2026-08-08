@@ -6,6 +6,7 @@
     <Project Path="src/ObdGarage.Obd/ObdGarage.Obd.csproj" />
     <Project Path="src/ObdGarage.Server/ObdGarage.Server.csproj" />
     <Project Path="src/ObdGarage.Shared/ObdGarage.Shared.csproj" />
+    <Project Path="src/ObdGarage.UI/ObdGarage.UI.csproj" />
     <Project Path="src/ObdGarage.Web/ObdGarage.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">

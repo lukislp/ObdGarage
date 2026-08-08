@@ -54,6 +54,7 @@
     <ProjectReference Include="..\ObdGarage.Data\ObdGarage.Data.csproj" />
     <ProjectReference Include="..\ObdGarage.Obd\ObdGarage.Obd.csproj" />
     <ProjectReference Include="..\ObdGarage.Shared\ObdGarage.Shared.csproj" />
+    <ProjectReference Include="..\ObdGarage.UI\ObdGarage.UI.csproj" />
   </ItemGroup>
 
 </Project>

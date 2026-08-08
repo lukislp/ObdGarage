@@ -1,4 +1,4 @@
-namespace ObdGarage.Web.Services;
+namespace ObdGarage.Application;
 
 /// <summary>
 /// Local app state: implicit local user (until the first login)
