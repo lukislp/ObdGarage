@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/lukislp/ObdGarage/compare/v1.2.0...v1.3.0) (2026-08-08)
+
+
+### Features
+
+* push collected OBD samples to the backend once it's reachable again ([80c7e3f](https://github.com/lukislp/ObdGarage/commit/80c7e3fa6c6d4dbc180cd7af269883c43247263d))
+
 ## [1.1.3](https://github.com/lukislp/ObdGarage/compare/v1.1.2...v1.1.3) (2026-08-08)
 
 
