@@ -3,8 +3,8 @@ bin/
 obj/
 
 ## Runtime data (JSON persistence, per installation)
-src/CarApp.Web/data/
-src/CarApp.Server/data/
+src/ObdGarage.Web/data/
+src/ObdGarage.Server/data/
 
 ## IDE
 .vs/

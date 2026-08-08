@@ -1,0 +1,163 @@
+@page "/"
+@inject IRepository<ObdGarage.Core.Vehicle> Vehicles
+@inject IRepository<MaintenanceTask> Tasks
+@inject ConnectionManager Connections
+@inject IClock Clock
+@inject AppState State
+
+<PageTitle>Garage &ndash; ObdGarage</PageTitle>
+
+<div class="page-head">
+    <h1>Garage</h1>
+    <a class="btn btn-primary" href="/vehicles/new">+ Fahrzeug hinzufügen</a>
+</div>
+
+@if (_vehicles.Count == 0)
+{
+    <div class="card empty-state">
+        <h3>Noch keine Fahrzeuge</h3>
+        <p class="muted">Lege dein erstes Fahrzeug an — danach kannst du dich per Simulator oder WLAN-Adapter verbinden.</p>
+        <a class="btn btn-primary" href="/vehicles/new">Fahrzeug hinzufügen</a>
+    </div>
+}
+else
+{
+    <div class="vehicle-grid">
+        @foreach (var v in _vehicles)
+        {
+            var connected = Connections.IsConnected(v.Id);
+            var urgent = _urgent.GetValueOrDefault(v.Id);
+            var tuev = TuevStatus(v);
+            <a class="card vehicle-card" href="/vehicles/@v.Id">
+                <div class="vehicle-photo">
+                    @if (v.PhotoPath is not null)
+                    {
+                        <img src="/photos/@v.Id" alt="@v.Name" />
+                    }
+                    else
+                    {
+                        <div class="vehicle-initials" style="background:@InitialsGradient(v)">@Initials(v)</div>
+                    }
+                    <span class="conn-dot @(connected ? "on" : "off")"
+                          title="@(connected ? "Verbunden" : "Getrennt")"></span>
+                </div>
+                <div class="vehicle-body">
+                    <div class="vehicle-title">
+                        <strong>@v.Name</strong>
+                        @if (v.LicensePlate is not null)
+                        {
+                            <span class="plate">@v.LicensePlate</span>
+                        }
+                    </div>
+                    <div class="vehicle-sub muted">@v.Make @v.Model @(v.ModelYear is { } y ? $"({y})" : "")</div>
+                    <div class="vehicle-facts">
+                        <div class="fact">
+                            <span class="fact-label">km-Stand</span>
+                            <span class="fact-value">
+                                @Fmt.Km(v.LastKnownOdometerKm)
+                                <span class="badge badge-neutral">@SourceLabel(v.OdometerSource)</span>
+                            </span>
+                        </div>
+                        <div class="fact">
+                            <span class="fact-label">TÜV</span>
+                            @if (tuev is { } t)
+                            {
+                                <span class="badge @BadgeClass(t.Badge)">@t.Text</span>
+                            }
+                            else
+                            {
+                                <span class="muted">kein Termin</span>
+                            }
+                        </div>
+                        <div class="fact">
+                            <span class="fact-label">Nächster Service</span>
+                            @if (urgent is not null)
+                            {
+                                <span class="fact-value">
+                                    <span class="badge @BadgeClass(urgent.Badge)">@ServiceText(urgent)</span>
+                                    <span class="muted small">@urgent.Task.Title</span>
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="muted">keine Aufgaben</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </a>
+        }
+    </div>
+}
+
+@code {
+    private List<ObdGarage.Core.Vehicle> _vehicles = [];
+    private readonly Dictionary<Guid, MaintenanceStatus?> _urgent = [];
+    private DateOnly _today;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _today = DateOnly.FromDateTime(Clock.UtcNow.LocalDateTime);
+        _vehicles = (await Vehicles.GetAllAsync())
+            .Where(v => v.OwnerUserId == State.CurrentUserId)
+            .OrderBy(v => v.Name)
+            .ToList();
+
+        var allTasks = await Tasks.GetAllAsync();
+        foreach (var v in _vehicles)
+        {
+            var tasks = allTasks.Where(t => t.VehicleId == v.Id);
+            _urgent[v.Id] = MaintenanceCalculator.MostUrgent(tasks, v.LastKnownOdometerKm, _today);
+        }
+    }
+
+    private (DueBadge Badge, string Text)? TuevStatus(ObdGarage.Core.Vehicle v)
+    {
+        if (v.InspectionDueDate is not { } due)
+            return null;
+        var days = due.DayNumber - _today.DayNumber;
+        var badge = MaintenanceCalculator.GetBadge(null, days);
+        var text = days < 0 ? $"überfällig seit {-days} Tagen"
+            : days == 0 ? "heute fällig"
+            : days < 60 ? $"in {days} Tagen"
+            : $"in {days / 30} Monaten";
+        return (badge, text);
+    }
+
+    private static string ServiceText(MaintenanceStatus s)
+    {
+        if (s.IsOverdue) return "überfällig";
+        var parts = new List<string>();
+        if (s.RemainingKm is { } km) parts.Add($"in {km:N0} km");
+        if (s.RemainingDays is { } d) parts.Add($"in {d} Tagen");
+        return parts.Count > 0 ? string.Join(" / ", parts) : "geplant";
+    }
+
+    public static string BadgeClass(DueBadge badge) => badge switch
+    {
+        DueBadge.Red => "badge-red",
+        DueBadge.Yellow => "badge-yellow",
+        _ => "badge-green",
+    };
+
+    public static string SourceLabel(OdometerSource source) => source switch
+    {
+        OdometerSource.ObdStandardPid => "OBD",
+        OdometerSource.Estimated => "geschätzt",
+        _ => "manuell",
+    };
+
+    private static string Initials(ObdGarage.Core.Vehicle v)
+    {
+        var words = v.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return words.Length >= 2
+            ? $"{char.ToUpperInvariant(words[0][0])}{char.ToUpperInvariant(words[1][0])}"
+            : v.Name.Length > 0 ? v.Name[..Math.Min(2, v.Name.Length)].ToUpperInvariant() : "??";
+    }
+
+    private static string InitialsGradient(ObdGarage.Core.Vehicle v)
+    {
+        var hue = v.Name.Aggregate(0, (h, c) => (h * 31 + c) & 0x7FFFFFFF) % 360;
+        return $"linear-gradient(135deg, hsl({hue}, 55%, 42%), hsl({(hue + 45) % 360}, 60%, 26%))";
+    }
+}

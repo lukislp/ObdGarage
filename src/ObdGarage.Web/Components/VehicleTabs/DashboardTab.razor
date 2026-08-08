@@ -1,0 +1,210 @@
+@implements IDisposable
+@inject ConnectionManager Connections
+@inject IRepository<AdapterProfile> Adapters
+
+@{
+    var snapshot = Connections.GetSnapshot(Vehicle.Id);
+}
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error</div>
+}
+
+@if (!snapshot.Connected)
+{
+    <div class="card">
+        <h3>Verbinden</h3>
+        <p class="muted">Wähle die Verbindung zum OBD2-Adapter. Der Simulator emuliert ein komplettes Fahrzeug inkl. Fahrprofil.</p>
+        <div class="connect-grid">
+            <div class="connect-option">
+                <h4>Simulator</h4>
+                <p class="muted small">Virtuelles Fahrzeug — ideal zum Ausprobieren ohne Auto.</p>
+                <button class="btn btn-primary" type="button" @onclick="ConnectSimulator">Mit Simulator verbinden</button>
+            </div>
+            <div class="connect-option">
+                <h4>WLAN-Adapter</h4>
+                <p class="muted small">ELM327-Adapter im Fahrzeug-WLAN (typisch 192.168.0.10:35000).</p>
+                <div class="inline-fields">
+                    <label>Host
+                        <input @bind="_wifiHost" placeholder="192.168.0.10" />
+                    </label>
+                    <label>Port
+                        <input @bind="_wifiPort" type="number" min="1" max="65535" />
+                    </label>
+                </div>
+                <button class="btn" type="button" @onclick="ConnectWifi">Mit WLAN-Adapter verbinden</button>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="card conn-bar">
+        <div>
+            <span class="conn-dot on"></span>
+            <strong>Verbunden</strong>
+            <span class="muted">über @snapshot.TransportLabel</span>
+            @if (snapshot.Vin is not null)
+            {
+                <span class="muted">&middot; VIN: <code>@snapshot.Vin</code></span>
+            }
+        </div>
+        <button class="btn btn-danger" type="button" @onclick="Disconnect">Trennen</button>
+    </div>
+
+    <div class="live-grid">
+        @foreach (var pid in LivePids)
+        {
+            var reading = snapshot.Readings.FirstOrDefault(r => r.PidKey == pid.Key);
+            <div class="card live-tile">
+                <span class="live-label">@pid.DisplayName</span>
+                <span class="live-value">@(reading is null ? "–" : Fmt.Reading(reading))</span>
+            </div>
+        }
+    </div>
+
+    @if (snapshot.TripActive)
+    {
+        <div class="card trip-banner">
+            <span class="pulse"></span>
+            <strong>Fahrt läuft</strong>
+            <span class="muted">Distanz: @snapshot.TripDistanceKm.ToString("N2") km</span>
+        </div>
+    }
+    else
+    {
+        <p class="muted small">
+            Keine Fahrt aktiv — das Fahrtenbuch startet automatisch, sobald sich das Fahrzeug bewegt.
+        </p>
+    }
+}
+
+@code {
+    /// <summary>Tiles of the live dashboard (order = display order).</summary>
+    private static readonly PidDefinition[] LivePids =
+    [
+        StandardPids.Rpm,
+        StandardPids.Speed,
+        StandardPids.CoolantTemp,
+        StandardPids.ControlModuleVoltage,
+        StandardPids.IntakeTemp,
+        StandardPids.EngineLoad,
+    ];
+
+    [Parameter, EditorRequired] public required ObdGarage.Core.Vehicle Vehicle { get; set; }
+
+    private string _wifiHost = "192.168.0.10";
+    private int _wifiPort = 35000;
+    private string? _error;
+
+    private PeriodicTimer? _timer;
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var profile = (await Adapters.GetAllAsync())
+            .FirstOrDefault(a => a.VehicleId == Vehicle.Id && a.TransportType == AdapterTransportType.WifiTcp);
+        if (profile?.Address.Split(':') is [var host, var port, ..])
+        {
+            _wifiHost = host;
+            _wifiPort = int.TryParse(port, out var p) ? p : 35000;
+        }
+
+        if (Connections.IsConnected(Vehicle.Id))
+            StartPolling();
+    }
+
+    private async Task ConnectSimulator()
+    {
+        _error = null;
+        try
+        {
+            await Connections.ConnectSimulatorAsync(Vehicle.Id);
+            StartPolling();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Verbindung fehlgeschlagen: {ex.Message}";
+        }
+    }
+
+    private async Task ConnectWifi()
+    {
+        _error = null;
+        var host = _wifiHost.Trim();
+        if (host.Length == 0)
+        {
+            _error = "Bitte Host des WLAN-Adapters angeben.";
+            return;
+        }
+
+        try
+        {
+            // Remember the adapter profile (pre-fill next time)
+            var profile = (await Adapters.GetAllAsync())
+                .FirstOrDefault(a => a.VehicleId == Vehicle.Id && a.TransportType == AdapterTransportType.WifiTcp);
+            profile ??= new AdapterProfile
+            {
+                VehicleId = Vehicle.Id,
+                Name = "WLAN-Adapter",
+                TransportType = AdapterTransportType.WifiTcp,
+                Address = $"{host}:{_wifiPort}",
+            };
+            profile.Address = $"{host}:{_wifiPort}";
+            profile.Touch();
+            await Adapters.UpsertAsync(profile);
+
+            await Connections.ConnectWifiAsync(Vehicle.Id, host, _wifiPort);
+            StartPolling();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Verbindung fehlgeschlagen: {ex.Message}";
+        }
+    }
+
+    private async Task Disconnect()
+    {
+        await Connections.DisconnectAsync(Vehicle.Id);
+        StopPolling();
+    }
+
+    private void StartPolling()
+    {
+        if (_timer is not null)
+            return;
+        _cts = new CancellationTokenSource();
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        _ = PollLoopAsync(_timer, _cts.Token);
+    }
+
+    private void StopPolling()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = null;
+        _timer?.Dispose();
+        _timer = null;
+    }
+
+    private async Task PollLoopAsync(PeriodicTimer timer, CancellationToken ct)
+    {
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+                await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException)
+        {
+            // Ends via Dispose()/StopPolling() — expected.
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _timer?.Dispose();
+    }
+}

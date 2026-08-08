@@ -1,0 +1,6 @@
+@ObdGarage.Server_HostAddress = http://localhost:5235
+
+GET {{ObdGarage.Server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

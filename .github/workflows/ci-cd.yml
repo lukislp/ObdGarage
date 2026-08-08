@@ -39,11 +39,11 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
           restore-keys: |
             nuget-${{ runner.os }}-
-      - run: dotnet test tests/CarApp.Tests/CarApp.Tests.csproj --configuration ${{ env.CONFIGURATION }} --collect:"XPlat Code Coverage"
+      - run: dotnet test tests/ObdGarage.Tests/ObdGarage.Tests.csproj --configuration ${{ env.CONFIGURATION }} --collect:"XPlat Code Coverage"
       - uses: actions/upload-artifact@v7
         with:
           name: xunit-coverage
-          path: tests/CarApp.Tests/TestResults/**/coverage.cobertura.xml
+          path: tests/ObdGarage.Tests/TestResults/**/coverage.cobertura.xml
           retention-days: 7
 
   # Full application/E2E/sync suite via the project's own dependency-free runner (built
@@ -63,7 +63,7 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
           restore-keys: |
             nuget-${{ runner.os }}-
-      - run: dotnet build tools/CarApp.TestRunner/CarApp.TestRunner.csproj --configuration ${{ env.CONFIGURATION }}
+      - run: dotnet build tools/ObdGarage.TestRunner/ObdGarage.TestRunner.csproj --configuration ${{ env.CONFIGURATION }}
       # TestRunner is a plain console app, not xUnit/VSTest - "dotnet test" coverage
       # collection doesn't apply. coverlet.console instead wraps the whole process:
       # instrumenting every assembly copied into its output folder (Core, Application,
@@ -72,9 +72,9 @@ jobs:
       # gates the job on a real test failure, not just on coverage collection succeeding.
       - run: dotnet tool install -g coverlet.console
       - run: |
-          coverlet tools/CarApp.TestRunner/bin/${{ env.CONFIGURATION }}/net10.0/CarApp.TestRunner.dll \
+          coverlet tools/ObdGarage.TestRunner/bin/${{ env.CONFIGURATION }}/net10.0/ObdGarage.TestRunner.dll \
             --target "dotnet" \
-            --targetargs "tools/CarApp.TestRunner/bin/${{ env.CONFIGURATION }}/net10.0/CarApp.TestRunner.dll" \
+            --targetargs "tools/ObdGarage.TestRunner/bin/${{ env.CONFIGURATION }}/net10.0/ObdGarage.TestRunner.dll" \
             --format cobertura \
             --output testrunner-coverage.xml
       - uses: actions/upload-artifact@v7
@@ -85,9 +85,9 @@ jobs:
 
   # Merges the xUnit and TestRunner coverage into one self-hosted shields.io badge (no
   # external service/secret - same pattern as the other .NET repos in this portfolio).
-  # Scoped to backend/business-logic assemblies: CarApp.Web (Blazor Server UI) is
-  # excluded, no unit-test practice on Razor markup; CarApp.App (MAUI) isn't even part
-  # of CarApp.slnx/CI. Test assemblies themselves are excluded so their own always-100%
+  # Scoped to backend/business-logic assemblies: ObdGarage.Web (Blazor Server UI) is
+  # excluded, no unit-test practice on Razor markup; ObdGarage.App (MAUI) isn't even part
+  # of ObdGarage.slnx/CI. Test assemblies themselves are excluded so their own always-100%
   # coverage of their own test methods doesn't inflate the number.
   coverage:
     needs: [test-core, test-e2e]
@@ -108,7 +108,7 @@ jobs:
           -reports:"xunit-coverage/**/coverage.cobertura.xml;testrunner-coverage/testrunner-coverage.xml"
           -targetdir:coverage-summary
           -reporttypes:JsonSummary
-          -assemblyfilters:"-CarApp.Web;-CarApp.Tests;-CarApp.TestRunner"
+          -assemblyfilters:"-ObdGarage.Web;-ObdGarage.Tests;-ObdGarage.TestRunner"
       - run: python3 scripts/generate_coverage_badge.py coverage-summary/Summary.json coverage-badge.json
       - uses: actions/upload-artifact@v7
         with:
@@ -129,7 +129,7 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
           restore-keys: |
             nuget-${{ runner.os }}-
-      - run: dotnet format CarApp.slnx --verify-no-changes --verbosity diagnostic
+      - run: dotnet format ObdGarage.slnx --verify-no-changes --verbosity diagnostic
 
   build:
     # No implicit stage-sequencing under GitHub's DAG model (unlike GitLab) - wait for
@@ -147,8 +147,8 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
           restore-keys: |
             nuget-${{ runner.os }}-
-      - run: dotnet restore CarApp.slnx
-      - run: dotnet build CarApp.slnx --configuration ${{ env.CONFIGURATION }} --no-restore
+      - run: dotnet restore ObdGarage.slnx
+      - run: dotnet build ObdGarage.slnx --configuration ${{ env.CONFIGURATION }} --no-restore
 
   # ---------------------------------------------------------------------
   # Version / docker / release — push to main only

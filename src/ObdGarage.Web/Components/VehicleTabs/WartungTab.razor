@@ -1,0 +1,287 @@
+@inject IRepository<MaintenanceTask> Tasks
+@inject IRepository<ObdGarage.Core.Vehicle> Vehicles
+@inject ConnectionManager Connections
+@inject OdometerTracker Odometer
+@inject IClock Clock
+@inject IJSRuntime JS
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error</div>
+}
+@if (_message is not null)
+{
+    <div class="alert alert-success">@_message</div>
+}
+
+<div class="card">
+    <h3>Kilometerstand</h3>
+    <p>
+        Aktuell: <strong>@Fmt.Km(Vehicle.LastKnownOdometerKm)</strong>
+        <span class="badge badge-neutral">@Components.Pages.Home.SourceLabel(Vehicle.OdometerSource)</span>
+    </p>
+    <div class="odo-actions">
+        <div class="inline-form">
+            <input @bind="_odometerKm" type="number" step="0.1" min="0" placeholder="neuer km-Stand" />
+            <button class="btn btn-primary" type="button" @onclick="RecordOdometer">Manuell erfassen</button>
+        </div>
+        <button class="btn" type="button" @onclick="ReadOdometerFromObd" disabled="@(!Connections.IsConnected(Vehicle.Id))">
+            Vom Auto lesen (OBD)
+        </button>
+    </div>
+    @if (!Connections.IsConnected(Vehicle.Id))
+    {
+        <p class="muted small">„Vom Auto lesen“ erfordert eine aktive Verbindung (Tab „Dashboard“).</p>
+    }
+</div>
+
+<div class="card">
+    <h3>Wartungsaufgaben</h3>
+    @if (_statuses.Count == 0)
+    {
+        <p class="muted">Noch keine Aufgaben. Lege unten z.B. „Ölwechsel“ oder den TÜV-Termin an.</p>
+    }
+    else
+    {
+        <ul class="task-list">
+            @foreach (var s in _statuses)
+            {
+                <li class="task-item">
+                    <div class="task-main">
+                        <span class="badge @Components.Pages.Home.BadgeClass(s.Badge)">@BadgeText(s)</span>
+                        <strong>@s.Task.Title</strong>
+                        <span class="muted small">@TypeLabel(s.Task.Type) &middot; @IntervalText(s.Task)</span>
+                    </div>
+                    <div class="task-sub muted small">
+                        @if (s.Task.LastDoneOn is { } done)
+                        {
+                            <span>zuletzt @done.ToString("dd.MM.yyyy")@(s.Task.LastDoneAtKm is { } k ? $" bei {k:N0} km" : "")</span>
+                        }
+                        else if (s.Task.FixedDueDate is { } due)
+                        {
+                            <span>fällig am @due.ToString("dd.MM.yyyy")</span>
+                        }
+                    </div>
+                    <div class="task-actions">
+                        <button class="btn btn-small" type="button" @onclick="() => MarkDone(s.Task)">Erledigt</button>
+                        <button class="btn btn-small btn-ghost" type="button" @onclick="() => DeleteTask(s.Task)">Löschen</button>
+                    </div>
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+<div class="card">
+    <h3>Neue Aufgabe</h3>
+    <div class="form-grid">
+        <label>Titel *
+            <input @bind="_title" maxlength="60" placeholder="z.B. Ölwechsel" />
+        </label>
+        <label>Typ
+            <select @bind="_type">
+                <option value="@MaintenanceType.OilChange">Ölwechsel</option>
+                <option value="@MaintenanceType.Inspection">TÜV/HU</option>
+                <option value="@MaintenanceType.Service">Service</option>
+                <option value="@MaintenanceType.TireChange">Reifenwechsel</option>
+                <option value="@MaintenanceType.Custom">Sonstiges</option>
+            </select>
+        </label>
+        <label>Intervall (km)
+            <input @bind="_intervalKm" type="number" min="1" placeholder="z.B. 15000" />
+        </label>
+        <label>Intervall (Monate)
+            <input @bind="_intervalMonths" type="number" min="1" placeholder="z.B. 12" />
+        </label>
+        <label>Festes Fälligkeitsdatum
+            <input value="@_fixedDue" @onchange="e => _fixedDue = e.Value?.ToString()" type="date" />
+        </label>
+        <label>Zuletzt erledigt am
+            <input value="@_lastDoneOn" @onchange="e => _lastDoneOn = e.Value?.ToString()" type="date" />
+        </label>
+        <label>Zuletzt erledigt bei (km)
+            <input @bind="_lastDoneKm" type="number" step="0.1" min="0" />
+        </label>
+    </div>
+    <div class="form-actions">
+        <button class="btn btn-primary" type="button" @onclick="CreateTask">Aufgabe anlegen</button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public required ObdGarage.Core.Vehicle Vehicle { get; set; }
+
+    private List<MaintenanceStatus> _statuses = [];
+    private string? _error;
+    private string? _message;
+
+    private string? _odometerKm;
+
+    private string _title = "";
+    private MaintenanceType _type = MaintenanceType.OilChange;
+    private string? _intervalKm;
+    private string? _intervalMonths;
+    private string? _fixedDue;
+    private string? _lastDoneOn;
+    private string? _lastDoneKm;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var today = DateOnly.FromDateTime(Clock.UtcNow.LocalDateTime);
+        _statuses = (await Tasks.GetAllAsync())
+            .Where(t => t.VehicleId == Vehicle.Id)
+            .Select(t => MaintenanceCalculator.GetStatus(t, Vehicle.LastKnownOdometerKm, today))
+            .OrderBy(s => s.IsOverdue ? 0 : 1)
+            .ThenBy(s => s.RemainingDays ?? int.MaxValue)
+            .ThenBy(s => s.RemainingKm ?? double.MaxValue)
+            .ToList();
+    }
+
+    private async Task RecordOdometer()
+    {
+        _error = null;
+        _message = null;
+        if (Fmt.ParseDouble(_odometerKm) is not { } km)
+        {
+            _error = "Bitte einen gültigen Kilometerstand eingeben.";
+            return;
+        }
+
+        try
+        {
+            await Odometer.RecordManualAsync(Vehicle, km);
+            _message = $"Kilometerstand {km:0.#} km gespeichert.";
+            await Refresh();
+        }
+        catch (Exception ex) when (ex is ArgumentException or ArgumentOutOfRangeException)
+        {
+            _error = ex.Message.Split(" (Parameter")[0];
+        }
+    }
+
+    private async Task ReadOdometerFromObd()
+    {
+        _error = null;
+        _message = null;
+        try
+        {
+            var km = await Connections.ReadOdometerFromObdAsync(Vehicle.Id);
+            if (km is { } value)
+            {
+                _message = $"Kilometerstand vom Auto gelesen: {value:0.#} km.";
+                await Refresh();
+            }
+            else
+            {
+                _error = "Kilometerstand nicht lesbar: nicht verbunden oder das Fahrzeug unterstützt PID A6 nicht.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"OBD-Lesefehler: {ex.Message}";
+        }
+    }
+
+    private async Task CreateTask()
+    {
+        _error = null;
+        var title = _title.Trim();
+        if (title.Length == 0)
+        {
+            _error = "Bitte einen Titel für die Aufgabe angeben.";
+            return;
+        }
+
+        var today = DateOnly.FromDateTime(Clock.UtcNow.LocalDateTime);
+        var task = new MaintenanceTask
+        {
+            VehicleId = Vehicle.Id,
+            Type = _type,
+            Title = title,
+            IntervalKm = Fmt.ParseInt(_intervalKm),
+            IntervalMonths = Fmt.ParseInt(_intervalMonths),
+            FixedDueDate = Fmt.ParseDate(_fixedDue),
+            LastDoneAtKm = Fmt.ParseDouble(_lastDoneKm),
+            LastDoneOn = Fmt.ParseDate(_lastDoneOn),
+        };
+        if (task.IntervalKm is not null && task.LastDoneAtKm is null)
+            task.LastDoneAtKm = Vehicle.LastKnownOdometerKm;
+        if (task.IntervalMonths is not null && task.LastDoneOn is null && task.FixedDueDate is null)
+            task.LastDoneOn = today;
+
+        await Tasks.UpsertAsync(task);
+        _title = "";
+        _intervalKm = null;
+        _intervalMonths = null;
+        _fixedDue = null;
+        _lastDoneOn = null;
+        _lastDoneKm = null;
+        await Refresh();
+    }
+
+    private async Task MarkDone(MaintenanceTask task)
+    {
+        var vehicle = await Vehicles.GetAsync(task.VehicleId);
+        var today = DateOnly.FromDateTime(Clock.UtcNow.LocalDateTime);
+
+        task.LastDoneOn = today;
+        task.LastDoneAtKm = vehicle?.LastKnownOdometerKm;
+        if (task.IntervalMonths is not null)
+            task.FixedDueDate = null;
+        task.Touch();
+        await Tasks.UpsertAsync(task);
+
+        if (task.Type == MaintenanceType.Inspection && vehicle is not null)
+        {
+            vehicle.InspectionDueDate = today.AddMonths(task.IntervalMonths ?? 24);
+            vehicle.Touch();
+            await Vehicles.UpsertAsync(vehicle);
+        }
+
+        _message = $"„{task.Title}“ als erledigt markiert.";
+        await Refresh();
+    }
+
+    private async Task DeleteTask(MaintenanceTask task)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Aufgabe löschen?"))
+            return;
+        await Tasks.DeleteAsync(task.Id);
+        await Refresh();
+    }
+
+    private async Task Refresh()
+    {
+        var fresh = await Vehicles.GetAsync(Vehicle.Id);
+        if (fresh is not null)
+            Vehicle.LastKnownOdometerKm = fresh.LastKnownOdometerKm;
+        await OnParametersSetAsync();
+    }
+
+    private static string BadgeText(MaintenanceStatus s)
+    {
+        if (s.IsOverdue) return "überfällig";
+        var parts = new List<string>();
+        if (s.RemainingKm is { } km) parts.Add($"{km:N0} km");
+        if (s.RemainingDays is { } d) parts.Add($"{d} Tage");
+        return parts.Count > 0 ? "noch " + string.Join(" / ", parts) : "ohne Termin";
+    }
+
+    private static string TypeLabel(MaintenanceType type) => type switch
+    {
+        MaintenanceType.OilChange => "Ölwechsel",
+        MaintenanceType.Inspection => "TÜV/HU",
+        MaintenanceType.Service => "Service",
+        MaintenanceType.TireChange => "Reifenwechsel",
+        _ => "Sonstiges",
+    };
+
+    private static string IntervalText(MaintenanceTask t)
+    {
+        var parts = new List<string>();
+        if (t.IntervalKm is { } km) parts.Add($"alle {km:N0} km");
+        if (t.IntervalMonths is { } m) parts.Add($"alle {m} Monate");
+        if (t.FixedDueDate is { } due) parts.Add($"fällig {due:dd.MM.yyyy}");
+        return parts.Count > 0 ? string.Join(", ", parts) : "ohne Intervall";
+    }
+}

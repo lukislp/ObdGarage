@@ -1,0 +1,111 @@
+using ObdGarage.Core;
+using ObdGarage.Obd.Pids;
+
+namespace ObdGarage.Application;
+
+/// <summary>
+/// Automatic trip log: detects trip start (speed above threshold)
+/// and trip end (standstill beyond timeout or loss of connection),
+/// integrates the distance from the speed samples (trapezoidal rule).
+/// </summary>
+public sealed class TripRecorder(IRepository<Trip> trips, IClock clock) : ITripTracker
+{
+    private DateTimeOffset _lastMovementAt;
+    private double? _lastSpeed;
+    private DateTimeOffset? _lastSpeedAt;
+    private double _distanceKm;
+
+    public TimeSpan IdleTimeout { get; set; } = TimeSpan.FromSeconds(120);
+    public double StartSpeedThresholdKmh { get; set; } = 3.0;
+    /// <summary>Gaps longer than this duration are not included in the distance (connection loss).</summary>
+    public TimeSpan MaxIntegrationGap { get; set; } = TimeSpan.FromSeconds(30);
+    /// <summary>
+    /// A gap this long since the last sample - with no NotifyDisconnectedAsync call in between -
+    /// is treated as an implicit connection loss (dongle unpowered, app killed) rather than a
+    /// continuation of the same trip. Deliberately much larger than MaxIntegrationGap/IdleTimeout
+    /// so it never fires during normal polling hiccups, only genuine multi-minute-plus outages.
+    /// </summary>
+    public TimeSpan MaxConnectionGap { get; set; } = TimeSpan.FromMinutes(10);
+
+    public Guid VehicleId { get; set; }
+    public TripCategory DefaultCategory { get; set; } = TripCategory.Private;
+
+    public Trip? CurrentTrip { get; private set; }
+    public double CurrentDistanceKm => Math.Round(_distanceKm, 3);
+
+    public async ValueTask<Guid?> ProcessAsync(ObdReading reading, CancellationToken ct = default)
+    {
+        if (reading.PidKey != StandardPids.Speed.Key)
+            return CurrentTrip?.Id;
+
+        var speed = reading.Value;
+        var now = reading.Timestamp;
+
+        // No samples at all for MaxConnectionGap means polling itself stopped (dongle lost
+        // power, Bluetooth/app killed) rather than the vehicle merely idling while connected -
+        // end the stale trip implicitly instead of silently resuming it once samples return.
+        if (CurrentTrip is not null && _lastSpeedAt is { } lastSampleAt && now - lastSampleAt >= MaxConnectionGap)
+            await EndTripAsync(lastSampleAt, ct).ConfigureAwait(false);
+
+        if (CurrentTrip is null)
+        {
+            if (speed >= StartSpeedThresholdKmh)
+                await StartTripAsync(now, ct).ConfigureAwait(false);
+            else
+                return null;
+        }
+
+        // Integrate distance (trapezoidal rule), skip gaps
+        if (_lastSpeed is { } lastSpeed && _lastSpeedAt is { } lastAt)
+        {
+            var dt = now - lastAt;
+            if (dt > TimeSpan.Zero && dt <= MaxIntegrationGap)
+                _distanceKm += (lastSpeed + speed) / 2.0 * dt.TotalHours;
+        }
+        _lastSpeed = speed;
+        _lastSpeedAt = now;
+
+        if (speed >= StartSpeedThresholdKmh)
+        {
+            _lastMovementAt = now;
+        }
+        else if (now - _lastMovementAt >= IdleTimeout)
+        {
+            await EndTripAsync(now, ct).ConfigureAwait(false);
+            return null;
+        }
+
+        return CurrentTrip?.Id;
+    }
+
+    /// <summary>Call on connection loss/ignition off — ends an ongoing trip.</summary>
+    public Task NotifyDisconnectedAsync(CancellationToken ct = default) =>
+        CurrentTrip is null ? Task.CompletedTask : EndTripAsync(clock.UtcNow, ct);
+
+    private async Task StartTripAsync(DateTimeOffset at, CancellationToken ct)
+    {
+        CurrentTrip = new Trip
+        {
+            VehicleId = VehicleId,
+            StartedAt = at,
+            Category = DefaultCategory,
+        };
+        _distanceKm = 0;
+        _lastSpeed = null;
+        _lastSpeedAt = null;
+        _lastMovementAt = at;
+        await trips.UpsertAsync(CurrentTrip, ct).ConfigureAwait(false);
+    }
+
+    private async Task EndTripAsync(DateTimeOffset at, CancellationToken ct)
+    {
+        var trip = CurrentTrip!;
+        trip.EndedAt = at;
+        trip.DistanceKm = Math.Round(_distanceKm, 2);
+        trip.Touch();
+        await trips.UpsertAsync(trip, ct).ConfigureAwait(false);
+        CurrentTrip = null;
+        _lastSpeed = null;
+        _lastSpeedAt = null;
+    }
+}

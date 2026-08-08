@@ -1,0 +1,224 @@
+@inject IRepository<FuelEntry> Fuel
+@inject IRepository<Expense> Expenses
+@inject IClock Clock
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error</div>
+}
+
+<div class="stats-row">
+    <div class="card stat-tile">
+        <span class="live-label">Verbrauch</span>
+        <span class="live-value">@(_consumption is { } c ? $"{c:N1} l/100km" : "–")</span>
+        <span class="muted small">Volltankmethode (min. 2 Volltank-Einträge mit km)</span>
+    </div>
+    <div class="card stat-tile">
+        <span class="live-label">Kosten gesamt</span>
+        <span class="live-value">@_totalCost.ToString("C0")</span>
+        <span class="muted small">Tanken + sonstige Ausgaben</span>
+    </div>
+    <div class="card stat-tile">
+        <span class="live-label">Kosten pro km</span>
+        <span class="live-value">@(_costPerKm is { } k ? k.ToString("C2") : "–")</span>
+        <span class="muted small">über erfasste km-Stände</span>
+    </div>
+</div>
+
+<div class="card">
+    <h3>Tanken erfassen</h3>
+    <div class="form-grid">
+        <label>Datum
+            <input value="@_fuelDate" @onchange="e => _fuelDate = e.Value?.ToString()" type="date" />
+        </label>
+        <label>Liter *
+            <input @bind="_fuelLiters" type="number" step="0.01" min="0.1" placeholder="z.B. 45,5" />
+        </label>
+        <label>Gesamtpreis (&euro;) *
+            <input @bind="_fuelTotalPrice" type="number" step="0.01" min="0" placeholder="z.B. 79,90" />
+        </label>
+        <label>km-Stand
+            <input @bind="_fuelOdometerKm" type="number" step="0.1" min="0" />
+        </label>
+        <label class="check-label">
+            <input @bind="_fuelFullTank" type="checkbox" /> Volltank
+        </label>
+    </div>
+    <div class="form-actions">
+        <button class="btn btn-primary" type="button" @onclick="AddFuel">Eintrag speichern</button>
+    </div>
+
+    @if (_fuel.Count > 0)
+    {
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead><tr><th>Datum</th><th>Liter</th><th>Preis</th><th>&euro;/l</th><th>km-Stand</th><th>Volltank</th></tr></thead>
+                <tbody>
+                    @foreach (var f in _fuel)
+                    {
+                        <tr>
+                            <td>@f.Date.ToString("dd.MM.yyyy")</td>
+                            <td>@f.Liters.ToString("N2") l</td>
+                            <td>@f.TotalPrice.ToString("C2")</td>
+                            <td>@((f.Liters > 0 ? f.TotalPrice / (decimal)f.Liters : 0).ToString("C3"))</td>
+                            <td>@(f.OdometerKm is { } km ? $"{km:N0} km" : "–")</td>
+                            <td>@(f.FullTank ? "ja" : "nein")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+<div class="card">
+    <h3>Sonstige Ausgaben</h3>
+    <div class="form-grid">
+        <label>Datum
+            <input value="@_expenseDate" @onchange="e => _expenseDate = e.Value?.ToString()" type="date" />
+        </label>
+        <label>Kategorie *
+            <select @bind="_expenseCategory">
+                <option>Werkstatt</option>
+                <option>Versicherung</option>
+                <option>Steuer</option>
+                <option>Pflege</option>
+                <option>Zubehör</option>
+                <option>Sonstiges</option>
+            </select>
+        </label>
+        <label>Betrag (&euro;) *
+            <input @bind="_expenseAmount" type="number" step="0.01" min="0.01" placeholder="z.B. 249,00" />
+        </label>
+        <label>Notiz
+            <input @bind="_expenseNote" maxlength="120" placeholder="z.B. Bremsen vorne" />
+        </label>
+    </div>
+    <div class="form-actions">
+        <button class="btn btn-primary" type="button" @onclick="AddExpense">Ausgabe speichern</button>
+    </div>
+
+    @if (_expenses.Count > 0)
+    {
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead><tr><th>Datum</th><th>Kategorie</th><th>Betrag</th><th>Notiz</th></tr></thead>
+                <tbody>
+                    @foreach (var e in _expenses)
+                    {
+                        <tr>
+                            <td>@e.Date.ToString("dd.MM.yyyy")</td>
+                            <td>@e.Category</td>
+                            <td>@e.Amount.ToString("C2")</td>
+                            <td class="muted">@e.Note</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <p class="muted small">
+            Summe Tanken: @_fuel.Sum(f => f.TotalPrice).ToString("C2")
+            &middot; Summe Ausgaben: @_expenses.Sum(e => e.Amount).ToString("C2")
+        </p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public required ObdGarage.Core.Vehicle Vehicle { get; set; }
+
+    private List<FuelEntry> _fuel = [];
+    private List<Expense> _expenses = [];
+    private double? _consumption;
+    private decimal _totalCost;
+    private decimal? _costPerKm;
+    private DateOnly _today;
+    private string? _error;
+
+    private string? _fuelDate;
+    private string? _fuelLiters;
+    private string? _fuelTotalPrice;
+    private string? _fuelOdometerKm;
+    private bool _fuelFullTank = true;
+
+    private string? _expenseDate;
+    private string _expenseCategory = "Werkstatt";
+    private string? _expenseAmount;
+    private string? _expenseNote;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _today = DateOnly.FromDateTime(Clock.UtcNow.LocalDateTime);
+        _fuelDate ??= _today.ToString("yyyy-MM-dd");
+        _expenseDate ??= _today.ToString("yyyy-MM-dd");
+        _fuelOdometerKm ??= Vehicle.LastKnownOdometerKm?.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        _fuel = (await Fuel.GetAllAsync())
+            .Where(f => f.VehicleId == Vehicle.Id)
+            .OrderByDescending(f => f.Date)
+            .ToList();
+        _expenses = (await Expenses.GetAllAsync())
+            .Where(e => e.VehicleId == Vehicle.Id)
+            .OrderByDescending(e => e.Date)
+            .ToList();
+
+        _consumption = FuelStatistics.ConsumptionPer100Km(_fuel);
+        _totalCost = FuelStatistics.TotalCost(_fuel, _expenses);
+        _costPerKm = FuelStatistics.CostPerKm(_fuel, _expenses);
+    }
+
+    private async Task AddFuel()
+    {
+        _error = null;
+        var liters = Fmt.ParseDouble(_fuelLiters);
+        var price = Fmt.ParseDecimal(_fuelTotalPrice);
+        if (liters is not > 0 || price is not >= 0)
+        {
+            _error = "Bitte Liter und Gesamtpreis angeben.";
+            return;
+        }
+
+        await Fuel.UpsertAsync(new FuelEntry
+        {
+            VehicleId = Vehicle.Id,
+            Date = Fmt.ParseDate(_fuelDate) ?? _today,
+            Liters = liters.Value,
+            TotalPrice = price.Value,
+            OdometerKm = Fmt.ParseDouble(_fuelOdometerKm),
+            FullTank = _fuelFullTank,
+        });
+
+        _fuelLiters = null;
+        _fuelTotalPrice = null;
+        await Reload();
+    }
+
+    private async Task AddExpense()
+    {
+        _error = null;
+        var amount = Fmt.ParseDecimal(_expenseAmount);
+        var category = _expenseCategory.Trim();
+        if (amount is not > 0 || category.Length == 0)
+        {
+            _error = "Bitte Kategorie und Betrag angeben.";
+            return;
+        }
+
+        await Expenses.UpsertAsync(new Expense
+        {
+            VehicleId = Vehicle.Id,
+            Date = Fmt.ParseDate(_expenseDate) ?? _today,
+            Category = category,
+            Amount = amount.Value,
+            Note = string.IsNullOrWhiteSpace(_expenseNote) ? null : _expenseNote.Trim(),
+        });
+
+        _expenseAmount = null;
+        _expenseNote = null;
+        await Reload();
+    }
+}

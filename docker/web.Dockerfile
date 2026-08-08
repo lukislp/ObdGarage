@@ -8,27 +8,27 @@ FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS build
 WORKDIR /src
 
 # Project files first, for Docker layer caching on unchanged dependencies.
-COPY ["src/CarApp.Web/CarApp.Web.csproj", "src/CarApp.Web/"]
-COPY ["src/CarApp.Core/CarApp.Core.csproj", "src/CarApp.Core/"]
-COPY ["src/CarApp.Application/CarApp.Application.csproj", "src/CarApp.Application/"]
-COPY ["src/CarApp.Data/CarApp.Data.csproj", "src/CarApp.Data/"]
-COPY ["src/CarApp.Obd/CarApp.Obd.csproj", "src/CarApp.Obd/"]
-COPY ["src/CarApp.Shared/CarApp.Shared.csproj", "src/CarApp.Shared/"]
+COPY ["src/ObdGarage.Web/ObdGarage.Web.csproj", "src/ObdGarage.Web/"]
+COPY ["src/ObdGarage.Core/ObdGarage.Core.csproj", "src/ObdGarage.Core/"]
+COPY ["src/ObdGarage.Application/ObdGarage.Application.csproj", "src/ObdGarage.Application/"]
+COPY ["src/ObdGarage.Data/ObdGarage.Data.csproj", "src/ObdGarage.Data/"]
+COPY ["src/ObdGarage.Obd/ObdGarage.Obd.csproj", "src/ObdGarage.Obd/"]
+COPY ["src/ObdGarage.Shared/ObdGarage.Shared.csproj", "src/ObdGarage.Shared/"]
 
-RUN dotnet restore "src/CarApp.Web/CarApp.Web.csproj"
+RUN dotnet restore "src/ObdGarage.Web/ObdGarage.Web.csproj"
 
-COPY src/CarApp.Web/ src/CarApp.Web/
-COPY src/CarApp.Core/ src/CarApp.Core/
-COPY src/CarApp.Application/ src/CarApp.Application/
-COPY src/CarApp.Data/ src/CarApp.Data/
-COPY src/CarApp.Obd/ src/CarApp.Obd/
-COPY src/CarApp.Shared/ src/CarApp.Shared/
+COPY src/ObdGarage.Web/ src/ObdGarage.Web/
+COPY src/ObdGarage.Core/ src/ObdGarage.Core/
+COPY src/ObdGarage.Application/ src/ObdGarage.Application/
+COPY src/ObdGarage.Data/ src/ObdGarage.Data/
+COPY src/ObdGarage.Obd/ src/ObdGarage.Obd/
+COPY src/ObdGarage.Shared/ src/ObdGarage.Shared/
 
 # No --no-restore: the restore above ran before wwwroot/static assets existed in the
 # build context (copied in afterwards, for layer caching), so publishing against that
 # stale manifest would silently drop static web assets, including Blazor's own framework
-# scripts - breaking server-side interactivity at runtime. See CarApp.Web's own comments.
-RUN dotnet publish "src/CarApp.Web/CarApp.Web.csproj" \
+# scripts - breaking server-side interactivity at runtime. See ObdGarage.Web's own comments.
+RUN dotnet publish "src/ObdGarage.Web/ObdGarage.Web.csproj" \
     -c Release \
     -o /app/publish \
     /p:UseAppHost=false \
@@ -54,8 +54,8 @@ COPY --from=build --chown=app:app /app/publish ./
 
 USER app
 # Runtime data (photos, sync-auth.json, sync-state.json) lives under ContentRootPath/data,
-# i.e. /app/data here - see CarApp.Web/Program.cs.
+# i.e. /app/data here - see ObdGarage.Web/Program.cs.
 VOLUME ["/app/data"]
 EXPOSE 5199
 
-ENTRYPOINT ["dotnet", "CarApp.Web.dll"]
+ENTRYPOINT ["dotnet", "ObdGarage.Web.dll"]

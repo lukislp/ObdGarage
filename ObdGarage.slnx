@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ObdGarage.Application/ObdGarage.Application.csproj" />
+    <Project Path="src/ObdGarage.Core/ObdGarage.Core.csproj" />
+    <Project Path="src/ObdGarage.Data/ObdGarage.Data.csproj" />
+    <Project Path="src/ObdGarage.Obd/ObdGarage.Obd.csproj" />
+    <Project Path="src/ObdGarage.Server/ObdGarage.Server.csproj" />
+    <Project Path="src/ObdGarage.Shared/ObdGarage.Shared.csproj" />
+    <Project Path="src/ObdGarage.Web/ObdGarage.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ObdGarage.Tests/ObdGarage.Tests.csproj" />
+  </Folder>
+</Solution>

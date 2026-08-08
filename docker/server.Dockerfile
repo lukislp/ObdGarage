@@ -8,19 +8,19 @@ FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS build
 WORKDIR /src
 
 # Project files first, for Docker layer caching on unchanged dependencies.
-COPY ["src/CarApp.Server/CarApp.Server.csproj", "src/CarApp.Server/"]
-COPY ["src/CarApp.Core/CarApp.Core.csproj", "src/CarApp.Core/"]
-COPY ["src/CarApp.Data/CarApp.Data.csproj", "src/CarApp.Data/"]
-COPY ["src/CarApp.Shared/CarApp.Shared.csproj", "src/CarApp.Shared/"]
+COPY ["src/ObdGarage.Server/ObdGarage.Server.csproj", "src/ObdGarage.Server/"]
+COPY ["src/ObdGarage.Core/ObdGarage.Core.csproj", "src/ObdGarage.Core/"]
+COPY ["src/ObdGarage.Data/ObdGarage.Data.csproj", "src/ObdGarage.Data/"]
+COPY ["src/ObdGarage.Shared/ObdGarage.Shared.csproj", "src/ObdGarage.Shared/"]
 
-RUN dotnet restore "src/CarApp.Server/CarApp.Server.csproj"
+RUN dotnet restore "src/ObdGarage.Server/ObdGarage.Server.csproj"
 
-COPY src/CarApp.Server/ src/CarApp.Server/
-COPY src/CarApp.Core/ src/CarApp.Core/
-COPY src/CarApp.Data/ src/CarApp.Data/
-COPY src/CarApp.Shared/ src/CarApp.Shared/
+COPY src/ObdGarage.Server/ src/ObdGarage.Server/
+COPY src/ObdGarage.Core/ src/ObdGarage.Core/
+COPY src/ObdGarage.Data/ src/ObdGarage.Data/
+COPY src/ObdGarage.Shared/ src/ObdGarage.Shared/
 
-RUN dotnet publish "src/CarApp.Server/CarApp.Server.csproj" \
+RUN dotnet publish "src/ObdGarage.Server/ObdGarage.Server.csproj" \
     -c Release \
     -o /app/publish \
     --no-restore \
@@ -48,4 +48,4 @@ USER app
 VOLUME ["/data"]
 EXPOSE 5299
 
-ENTRYPOINT ["dotnet", "CarApp.Server.dll"]
+ENTRYPOINT ["dotnet", "ObdGarage.Server.dll"]

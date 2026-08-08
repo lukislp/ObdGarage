@@ -1,0 +1,88 @@
+/* Minimale Basis-Styles für die Platzhalter-Startseite.
+   Das richtige Styling kommt mit der gemeinsamen UI-Bibliothek (ObdGarage.UI). */
+
+html, body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f5f6f8;
+    color: #1c1e21;
+}
+
+.page {
+    padding: 1rem;
+    max-width: 40rem;
+    margin: 0 auto;
+}
+
+h1 { margin: 0.5rem 0 0; }
+h2 { font-size: 1.05rem; margin-bottom: 0.25rem; }
+
+section {
+    background: #fff;
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    margin: 0.75rem 0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+label { display: block; margin: 0.35rem 0; }
+
+input {
+    padding: 0.4rem 0.5rem;
+    border: 1px solid #c6ccd4;
+    border-radius: 0.3rem;
+    font-size: 1rem;
+}
+
+button {
+    padding: 0.5rem 1rem;
+    margin-top: 0.5rem;
+    border: none;
+    border-radius: 0.3rem;
+    background: #1b2a4a;
+    color: #fff;
+    font-size: 1rem;
+}
+
+button:disabled { opacity: 0.5; }
+
+.muted { color: #667085; font-size: 0.9rem; }
+.ok  { color: #1a7f37; font-weight: 600; }
+.err { color: #b42318; font-weight: 600; }
+
+/* Aussparung für die Statusleiste (Notch etc.). */
+.status-bar-safe-area {
+    display: none;
+}
+
+@supports (-webkit-touch-callout: none) {
+    .status-bar-safe-area {
+        display: flex;
+        position: sticky;
+        top: 0;
+        height: env(safe-area-inset-top);
+        background-color: #f5f6f8;
+        width: 100%;
+        z-index: 1;
+    }
+}
+
+#blazor-error-ui {
+    background: lightyellow;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}

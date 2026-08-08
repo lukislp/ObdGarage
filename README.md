@@ -54,8 +54,8 @@ UI (Blazor components)  →  Application services  →  Repositories (Core inter
 ```
 
 - **UI is swappable.** Blazor components hold no logic or data access - they call
-  `CarApp.Application` services, which use repository interfaces defined in `CarApp.Core`
-  (implemented in `CarApp.Data`). Dependency direction is strict:
+  `ObdGarage.Application` services, which use repository interfaces defined in `ObdGarage.Core`
+  (implemented in `ObdGarage.Data`). Dependency direction is strict:
   `App/Web → Application/Data/Obd → Core`; `Core` depends on nothing.
 - **Transport abstraction.** `IObdTransport` (connect/send/read/disconnect) is implemented by a
   Wi-Fi TCP transport, an Android Bluetooth Classic transport, and a full vehicle simulator used
@@ -72,16 +72,16 @@ courtesy.
 
 | Project | Purpose |
 |---|---|
-| `src/CarApp.Core` | Domain models + interfaces, dependency-free |
-| `src/CarApp.Obd` | ELM327 client (read-only whitelist), PID registry, transports (Wi-Fi done; Android Bluetooth lives in `CarApp.App`), vehicle simulator |
-| `src/CarApp.Application` | `LiveDataService` (polling + gap-free value history), `TripRecorder`, `OdometerTracker`, `MaintenanceCalculator`, `FuelStatistics`, `SyncService` |
-| `src/CarApp.Data` | EF Core/SQLite persistence behind the `Core` interfaces (one `carapp.db` per data directory; earlier per-entity JSON files are imported automatically on first run) |
-| `src/CarApp.Server` | Backend: accounts (PBKDF2), hashed bearer tokens, Last-Write-Wins sync API, samples API |
-| `src/CarApp.Shared` | DTOs shared between app and backend |
-| `src/CarApp.Web` | Full UI, Blazor Interactive Server, no external JS dependencies |
-| `src/CarApp.App` | .NET MAUI shell (Android/iOS) incl. Android Bluetooth Classic transport - source only, needs the MAUI workload, not part of the solution file |
-| `tests/CarApp.Tests` | xUnit - OBD core (PID/DTC decoding, whitelist, client behavior), EF Core/SQLite persistence, and regression coverage for bugs found across the app |
-| `tools/CarApp.TestRunner` | Full application/E2E/sync suite, dependency-free (compiles without NuGet) |
+| `src/ObdGarage.Core` | Domain models + interfaces, dependency-free |
+| `src/ObdGarage.Obd` | ELM327 client (read-only whitelist), PID registry, transports (Wi-Fi done; Android Bluetooth lives in `ObdGarage.App`), vehicle simulator |
+| `src/ObdGarage.Application` | `LiveDataService` (polling + gap-free value history), `TripRecorder`, `OdometerTracker`, `MaintenanceCalculator`, `FuelStatistics`, `SyncService` |
+| `src/ObdGarage.Data` | EF Core/SQLite persistence behind the `Core` interfaces (one `obdgarage.db` per data directory; earlier per-entity JSON files are imported automatically on first run) |
+| `src/ObdGarage.Server` | Backend: accounts (PBKDF2), hashed bearer tokens, Last-Write-Wins sync API, samples API |
+| `src/ObdGarage.Shared` | DTOs shared between app and backend |
+| `src/ObdGarage.Web` | Full UI, Blazor Interactive Server, no external JS dependencies |
+| `src/ObdGarage.App` | .NET MAUI shell (Android/iOS) incl. Android Bluetooth Classic transport - source only, needs the MAUI workload, not part of the solution file |
+| `tests/ObdGarage.Tests` | xUnit - OBD core (PID/DTC decoding, whitelist, client behavior), EF Core/SQLite persistence, and regression coverage for bugs found across the app |
+| `tools/ObdGarage.TestRunner` | Full application/E2E/sync suite, dependency-free (compiles without NuGet) |
 
 ## Getting started
 
@@ -89,17 +89,17 @@ Requires the .NET 10 SDK.
 
 ```bash
 # 1. Full test suite (113 checks, including end-to-end with a vehicle simulator + sync roundtrips)
-dotnet run --project tools/CarApp.TestRunner
+dotnet run --project tools/ObdGarage.TestRunner
 
 # 2. Start the backend (invite code defaults to CARAPP-2026)
-ASPNETCORE_URLS=http://0.0.0.0:5299 dotnet run --project src/CarApp.Server --no-launch-profile
+ASPNETCORE_URLS=http://0.0.0.0:5299 dotnet run --project src/ObdGarage.Server --no-launch-profile
 
 # 3. Start the web app and open it in a browser
-ASPNETCORE_URLS=http://127.0.0.1:5199 dotnet run --project src/CarApp.Web --no-launch-profile
+ASPNETCORE_URLS=http://127.0.0.1:5199 dotnet run --project src/ObdGarage.Web --no-launch-profile
 # → http://127.0.0.1:5199  (Garage → add vehicle → dashboard → "connect simulator")
 ```
 
-`src/CarApp.Web/launchSettings.json` overrides `ASPNETCORE_URLS`, so `--no-launch-profile` is
+`src/ObdGarage.Web/launchSettings.json` overrides `ASPNETCORE_URLS`, so `--no-launch-profile` is
 required for the commands above to take effect.
 
 ## Deployment
@@ -128,13 +128,13 @@ production.
 
 Two complementary suites:
 
-- **`tools/CarApp.TestRunner`** (113 checks) - the primary suite. Dependency-free by design (this
+- **`tools/ObdGarage.TestRunner`** (113 checks) - the primary suite. Dependency-free by design (this
   project originated in an environment without NuGet access), covering the full stack: OBD
   parsing (including DTC reading), application services, persistence, and end-to-end sync
   roundtrips between multiple simulated devices and the real backend (ownership isolation,
   Last-Write-Wins conflicts, soft-delete tombstones, sample push/query scoping), plus a
   security-focused pass (login timing side-channel, rejected-push retry behavior).
-- **`tests/CarApp.Tests`** (65 tests, xUnit) - OBD core (PID/DTC decoding against real SAE
+- **`tests/ObdGarage.Tests`** (65 tests, xUnit) - OBD core (PID/DTC decoding against real SAE
   J1979/J2012 byte responses, the read-only command whitelist, `Elm327Client` behavior against a
   scripted transport) plus regression coverage for bugs found across the application, persistence
   (including the EF Core/SQLite repositories and the JSON→SQLite upgrade importer), and web UI
@@ -150,7 +150,7 @@ all of these pass.
       real device) - currently shows a placeholder view.
 - [ ] Extract the Web UI into a shared Razor Class Library so MAUI gets the same interactivity
       as the Web app.
-- [x] Switch persistence from JSON to EF Core + SQLite (only `CarApp.Data` changed - the
+- [x] Switch persistence from JSON to EF Core + SQLite (only `ObdGarage.Data` changed - the
       repository interfaces stayed the same). Existing per-entity JSON data from before the
       switch is imported automatically on first startup against a given data directory.
 - [ ] Implement the BLE transport (skeleton exists; iOS can only use BLE or Wi-Fi, not Bluetooth

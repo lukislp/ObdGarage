@@ -1,0 +1,88 @@
+@inject ConnectionManager Connections
+
+<div class="card">
+    <h3>Fehlercodes (DTCs)</h3>
+    <div class="odo-actions">
+        <button class="btn btn-primary" type="button" @onclick="ReadStored" disabled="@(!Connected)">
+            Gespeicherte Codes lesen
+        </button>
+        <button class="btn" type="button" @onclick="ReadPending" disabled="@(!Connected)">
+            Anstehende Codes lesen
+        </button>
+    </div>
+    @if (!Connected)
+    {
+        <p class="muted small">Erfordert eine aktive Verbindung (Tab „Dashboard“).</p>
+    }
+    @if (_error is not null)
+    {
+        <div class="alert alert-error">@_error</div>
+    }
+
+    @if (_lastReadAt is { } readAt)
+    {
+        @if (_codes.Count == 0)
+        {
+            <p class="muted">Keine @(_lastReadPending ? "anstehenden" : "gespeicherten") Fehlercodes.</p>
+        }
+        else
+        {
+            <ul class="task-list">
+                @foreach (var dtcCode in _codes)
+                {
+                    <li class="task-item">
+                        <div class="task-main">
+                            <strong>@dtcCode</strong>
+                            <span class="muted small">@(DtcDescriptions.Describe(dtcCode) ?? "Keine Beschreibung verfügbar")</span>
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+        <p class="muted small">Gelesen um @readAt.ToLocalTime().ToString("HH:mm:ss").</p>
+    }
+</div>
+
+<div class="card">
+    <h3>Hinweis</h3>
+    <p class="muted small">
+        Fehlercodes können hier nur gelesen, nicht gelöscht werden — ObdGarage sendet grundsätzlich
+        keine Schreibbefehle an das Fahrzeug (Mode 04 „Codes löschen“ ist auf Protokollebene
+        blockiert, siehe Sicherheits-Whitelist).
+    </p>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public required ObdGarage.Core.Vehicle Vehicle { get; set; }
+
+    private List<string> _codes = [];
+    private DateTimeOffset? _lastReadAt;
+    private bool _lastReadPending;
+    private string? _error;
+
+    private bool Connected => Connections.IsConnected(Vehicle.Id);
+
+    private Task ReadStored() => ReadAsync(pending: false);
+    private Task ReadPending() => ReadAsync(pending: true);
+
+    private async Task ReadAsync(bool pending)
+    {
+        _error = null;
+        try
+        {
+            var codes = await Connections.ReadDtcsAsync(Vehicle.Id, pending);
+            if (codes is null)
+            {
+                _error = "Fehlercodes nicht lesbar: nicht verbunden.";
+                return;
+            }
+            _codes = codes.ToList();
+            _lastReadPending = pending;
+            _lastReadAt = DateTimeOffset.UtcNow;
+        }
+        catch (Exception ex)
+        {
+            _error = $"OBD-Lesefehler: {ex.Message}";
+        }
+    }
+}

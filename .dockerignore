@@ -8,5 +8,5 @@ docs/
 tests/
 tools/
 *.md
-src/CarApp.Web/data/
-src/CarApp.Server/data/
+src/ObdGarage.Web/data/
+src/ObdGarage.Server/data/
