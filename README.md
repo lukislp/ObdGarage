@@ -91,7 +91,7 @@ Requires the .NET 10 SDK.
 # 1. Full test suite (113 checks, including end-to-end with a vehicle simulator + sync roundtrips)
 dotnet run --project tools/ObdGarage.TestRunner
 
-# 2. Start the backend (invite code defaults to CARAPP-2026)
+# 2. Start the backend (invite code defaults to OBDGARAGE-2026)
 ASPNETCORE_URLS=http://0.0.0.0:5299 dotnet run --project src/ObdGarage.Server --no-launch-profile
 
 # 3. Start the web app and open it in a browser
@@ -117,7 +117,7 @@ docker run -d -p 5199:5199 -v obdgarage-web-data:/app/data \
 ```
 
 `docker/server.Dockerfile` and `docker/web.Dockerfile` build from the repo root (both images
-share several projects). The backend's `InviteCode` defaults to `CARAPP-2026` if unset - override
+share several projects). The backend's `InviteCode` defaults to `OBDGARAGE-2026` if unset - override
 it for anything beyond local testing. Neither container currently persists its ASP.NET Core Data
 Protection key ring to a volume, so authentication cookies are invalidated on every container
 restart; mount `/home/app/.aspnet/DataProtection-Keys` (or configure

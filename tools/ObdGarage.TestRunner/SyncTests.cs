@@ -75,9 +75,9 @@ public static class SyncTests
             dirs.Add(a.Dir);
             var badInvite = await a.Sync.RegisterAsync("alice@example.com", "geheim123", "FALSCHER-CODE");
             check("Registrierung mit falschem Einladungscode abgelehnt", !badInvite.Success);
-            var reg = await a.Sync.RegisterAsync("alice@example.com", "geheim123", "CARAPP-2026");
+            var reg = await a.Sync.RegisterAsync("alice@example.com", "geheim123", "OBDGARAGE-2026");
             check("Registrierung mit korrektem Einladungscode", reg.Success);
-            var dup = await a.Sync.RegisterAsync("Alice@Example.com", "anders", "CARAPP-2026");
+            var dup = await a.Sync.RegisterAsync("Alice@Example.com", "anders", "OBDGARAGE-2026");
             check("Doppelte E-Mail (case-insensitiv) abgelehnt", !dup.Success);
 
             var badPw = await a.Sync.LoginAsync("alice@example.com", "falschesPasswort");
@@ -133,7 +133,7 @@ public static class SyncTests
             // --- User separation ----------------------------------------------------------
             var b = NewClient(baseUrl);
             dirs.Add(b.Dir);
-            await b.Sync.RegisterAsync("bob@example.com", "geheim456", "CARAPP-2026");
+            await b.Sync.RegisterAsync("bob@example.com", "geheim456", "OBDGARAGE-2026");
             await b.Sync.LoginAsync("bob@example.com", "geheim456");
             var bSync = await b.Sync.SyncAsync();
             check("Nutzer B sieht Fahrzeuge von A nicht",

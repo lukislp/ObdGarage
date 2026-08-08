@@ -22,7 +22,7 @@ public static class ServerApp
 
         dataDir ??= builder.Configuration["DataDir"] ?? "./data";
         Directory.CreateDirectory(dataDir);
-        var inviteCode = builder.Configuration["InviteCode"] ?? "CARAPP-2026";
+        var inviteCode = builder.Configuration["InviteCode"] ?? "OBDGARAGE-2026";
 
         var users = new UserStore(Path.Combine(dataDir, "users.json"));
         var tokens = new TokenStore(Path.Combine(dataDir, "tokens.json"));

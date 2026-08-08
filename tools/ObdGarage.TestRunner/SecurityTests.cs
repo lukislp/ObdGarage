@@ -118,7 +118,7 @@ public static class SecurityTests
                 new SystemClock(),
                 Path.Combine(clientDir, "syncstate.json"));
 
-            var reg = await sync.RegisterAsync("carol@example.com", "geheim789", "CARAPP-2026");
+            var reg = await sync.RegisterAsync("carol@example.com", "geheim789", "OBDGARAGE-2026");
             check("Setup: Registrierung erfolgreich", reg.Success);
             var login = await sync.LoginAsync("carol@example.com", "geheim789");
             check("Setup: Login erfolgreich", login.Success);
