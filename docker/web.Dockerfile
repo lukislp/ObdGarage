@@ -9,6 +9,7 @@ WORKDIR /src
 
 # Project files first, for Docker layer caching on unchanged dependencies.
 COPY ["src/ObdGarage.Web/ObdGarage.Web.csproj", "src/ObdGarage.Web/"]
+COPY ["src/ObdGarage.UI/ObdGarage.UI.csproj", "src/ObdGarage.UI/"]
 COPY ["src/ObdGarage.Core/ObdGarage.Core.csproj", "src/ObdGarage.Core/"]
 COPY ["src/ObdGarage.Application/ObdGarage.Application.csproj", "src/ObdGarage.Application/"]
 COPY ["src/ObdGarage.Data/ObdGarage.Data.csproj", "src/ObdGarage.Data/"]
@@ -18,6 +19,7 @@ COPY ["src/ObdGarage.Shared/ObdGarage.Shared.csproj", "src/ObdGarage.Shared/"]
 RUN dotnet restore "src/ObdGarage.Web/ObdGarage.Web.csproj"
 
 COPY src/ObdGarage.Web/ src/ObdGarage.Web/
+COPY src/ObdGarage.UI/ src/ObdGarage.UI/
 COPY src/ObdGarage.Core/ src/ObdGarage.Core/
 COPY src/ObdGarage.Application/ src/ObdGarage.Application/
 COPY src/ObdGarage.Data/ src/ObdGarage.Data/
