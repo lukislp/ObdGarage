@@ -12,16 +12,16 @@ connects over a standard ELM327 adapter (Bluetooth Classic, BLE, or Wi-Fi), and 
 automatic trip log, a maintenance planner (inspection/emissions due dates), fuel cost tracking,
 and full value-history charts out of the connection's live data.
 
-The Web app is a fully working test bed for the UI while the mobile shell is built out: vehicle
-cards (photo, odometer with source, inspection/service status), a live dashboard (simulator or
-real Wi-Fi adapter), value-history charts, an automatic trip log with CSV export, a maintenance
-planner, fuel/cost tracking, and sync against the self-hosted backend (invite-code registration,
-offline-first, strict per-owner scoping).
+The UI (vehicle cards with photo/odometer/inspection status, a live dashboard for simulator or
+real Wi-Fi adapter, value-history charts, an automatic trip log with CSV export, a maintenance
+planner, fuel/cost tracking, and sync against the self-hosted backend with invite-code
+registration) lives in a shared Razor Class Library used by both the Web app and the MAUI shell,
+so the two stay identical rather than one being a placeholder for the other.
 
-> **Status:** functional MVP - backend, sync, and the full web UI are built and tested (all
-> passing, see [Testing](#testing)) against a simulated vehicle. **Not yet validated against a
-> real OBD2 adapter or vehicle**, and the mobile (MAUI) shell exists as source only. See
-> [Roadmap](#roadmap).
+> **Status:** functional MVP - backend, sync, and the full UI (Web + MAUI, sharing the same
+> components) are built and tested (all passing, see [Testing](#testing)) against a simulated
+> vehicle. **Not yet validated against a real OBD2 adapter or vehicle**, and the MAUI shell hasn't
+> been tested on a real device yet (builds clean for Android). See [Roadmap](#roadmap).
 
 ![ObdGarage live dashboard, connected to the built-in vehicle simulator](docs/screenshot.png)
 
@@ -78,8 +78,9 @@ courtesy.
 | `src/ObdGarage.Data` | EF Core/SQLite persistence behind the `Core` interfaces (one `obdgarage.db` per data directory; earlier per-entity JSON files are imported automatically on first run) |
 | `src/ObdGarage.Server` | Backend: accounts (PBKDF2), hashed bearer tokens, Last-Write-Wins sync API, samples API |
 | `src/ObdGarage.Shared` | DTOs shared between app and backend |
-| `src/ObdGarage.Web` | Full UI, Blazor Interactive Server, no external JS dependencies |
-| `src/ObdGarage.App` | .NET MAUI shell (Android/iOS) incl. Android Bluetooth Classic transport - source only, needs the MAUI workload, not part of the solution file |
+| `src/ObdGarage.UI` | Razor Class Library - the actual pages/layout, shared by `ObdGarage.Web` and `ObdGarage.App` so the two never drift apart |
+| `src/ObdGarage.Web` | Blazor Interactive Server host for `ObdGarage.UI`, no external JS dependencies |
+| `src/ObdGarage.App` | .NET MAUI shell (Android/iOS) hosting the same `ObdGarage.UI`, incl. Android Bluetooth Classic transport - builds clean for Android, needs the MAUI workload, not part of the solution file |
 | `tests/ObdGarage.Tests` | xUnit - OBD core (PID/DTC decoding, whitelist, client behavior), EF Core/SQLite persistence, and regression coverage for bugs found across the app |
 | `tools/ObdGarage.TestRunner` | Full application/E2E/sync suite, dependency-free (compiles without NuGet) |
 
@@ -88,7 +89,7 @@ courtesy.
 Requires the .NET 10 SDK.
 
 ```bash
-# 1. Full test suite (113 checks, including end-to-end with a vehicle simulator + sync roundtrips)
+# 1. Full test suite (117 checks, including end-to-end with a vehicle simulator + sync roundtrips)
 dotnet run --project tools/ObdGarage.TestRunner
 
 # 2. Start the backend (invite code defaults to OBDGARAGE-2026)
@@ -128,7 +129,7 @@ production.
 
 Two complementary suites:
 
-- **`tools/ObdGarage.TestRunner`** (113 checks) - the primary suite. Dependency-free by design (this
+- **`tools/ObdGarage.TestRunner`** (117 checks) - the primary suite. Dependency-free by design (this
   project originated in an environment without NuGet access), covering the full stack: OBD
   parsing (including DTC reading), application services, persistence, and end-to-end sync
   roundtrips between multiple simulated devices and the real backend (ownership isolation,
@@ -146,13 +147,19 @@ all of these pass.
 
 ## Roadmap
 
-- [ ] Build the MAUI shell for Android/iOS (workload install, add to the solution, test on a
-      real device) - currently shows a placeholder view.
-- [ ] Extract the Web UI into a shared Razor Class Library so MAUI gets the same interactivity
-      as the Web app.
+- [x] Extract the Web UI into a shared Razor Class Library (`ObdGarage.UI`) so MAUI gets the same
+      interactivity as the Web app - MAUI now runs the real garage/vehicle/settings UI instead of
+      a placeholder connection-test page. Sync auth persists via `SecureStorage` on this host
+      instead of Web's file-based `sync-auth.json`.
+- [ ] Build the MAUI shell for Android/iOS (workload install, add to the solution, test on a real
+      device) - the app builds clean for Android; testing on a real device/publishing a build
+      still needs to happen.
 - [x] Switch persistence from JSON to EF Core + SQLite (only `ObdGarage.Data` changed - the
       repository interfaces stayed the same). Existing per-entity JSON data from before the
       switch is imported automatically on first startup against a given data directory.
+- [x] Push collected OBD samples (RPM, speed, coolant temp, ...) to the backend, not just the
+      regular entities - folded into the existing "sync now" action, retried automatically next
+      time the (typically home-network-only) server is reachable.
 - [ ] Implement the BLE transport (skeleton exists; iOS can only use BLE or Wi-Fi, not Bluetooth
       Classic).
 - [ ] Validate against a real ELM327 adapter and vehicle - everything so far has run against the
@@ -161,7 +168,8 @@ all of these pass.
       generic codes). Clearing codes (Mode 04) stays permanently blocked - no product decision
       changed that; this app only ever reads.
 - [ ] Harden the backend for access outside the home network (reverse proxy with HTTPS, or
-      WireGuard/Tailscale).
+      WireGuard/Tailscale) - the client already works transparently with an `https://` server URL
+      the moment the server itself terminates TLS, this item is purely the server-side setup.
 
 ## License
 
