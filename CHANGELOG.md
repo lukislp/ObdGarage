@@ -1,3 +1,14 @@
+## [1.3.2](https://github.com/lukislp/ObdGarage/compare/v1.3.1...v1.3.2) (2026-09-04)
+
+
+### Bug Fixes
+
+* **ci:** bump aquasecurity/trivy-action ([0c06351](https://github.com/lukislp/ObdGarage/commit/0c06351917dc797ca924c8fa3c79c37642b1592a))
+* **ci:** bump docker/setup-buildx-action from 4.2.0 to 4.3.0 ([674f34b](https://github.com/lukislp/ObdGarage/commit/674f34b80b927c191e0ac3ed44d475bd92e909f9))
+* **deps:** Bump coverlet.collector from 6.0.4 to 10.0.1 ([d945747](https://github.com/lukislp/ObdGarage/commit/d945747da7fca9e68f26e9dbd53d81e758200e54))
+* **deps:** Bump the dotnet group with 4 updates ([aa51fca](https://github.com/lukislp/ObdGarage/commit/aa51fcafd2028cc5c69cd0444bdb70ad0b6b14e5))
+* **deps:** Bump xunit.runner.visualstudio from 3.1.4 to 4.0.0 ([d5d99ed](https://github.com/lukislp/ObdGarage/commit/d5d99ed382e9a6c7a153df342365043bcf3e3a7e))
+
 ## [1.3.1](https://github.com/lukislp/ObdGarage/compare/v1.3.0...v1.3.1) (2026-09-03)
 
 
