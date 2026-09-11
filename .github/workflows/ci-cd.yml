@@ -222,6 +222,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # OIDC token for Sigstore keyless signing (cosign sign below) - no key material anywhere.
+      id-token: write
     env:
       NEXT_VERSION: ${{ needs.get-version.outputs.next_version }}
     steps:
@@ -263,7 +265,9 @@ jobs:
           docker logs obdgarage-server-smoke
           docker rm -f obdgarage-server-smoke
           exit 1
-      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: docker/server.Dockerfile
@@ -274,6 +278,31 @@ jobs:
             ${{ env.IMAGE_SERVER }}:${{ env.NEXT_VERSION }}
           cache-from: type=gha,scope=server
           cache-to: type=gha,mode=max,scope=server
+          # Supply chain (2026-09-11 hardening): BuildKit attaches a SLSA provenance attestation
+          # (which commit/workflow built this, from which base image) and an SPDX SBOM to every
+          # per-arch image. They travel as extra "unknown/unknown" platform entries inside the
+          # pushed index - GHCR shows them as such, containerd/k3s ignore them when pulling,
+          # Trivy resolves the real linux/amd64 entry.
+          provenance: mode=max
+          sbom: true
+      # Sigstore keyless signature on the pushed multi-arch manifest DIGEST (2026-09-11
+      # hardening), so every tag pointing at it (version, latest) is covered by one signature.
+      # The signing identity is this workflow's OIDC certificate (repo + workflow path + ref),
+      # the signature and the transparency-log entry live next to the image in GHCR. The verify
+      # step right after is the live proof for this run and the exact identity constraint Flux
+      # will use once its ImagePolicy verification is switched on (cluster phase).
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign the image (Sigstore keyless) and verify
+        env:
+          IDENTITY_REGEXP: '^https://github\.com/lukislp/ObdGarage/\.github/workflows/ci-cd\.yml@refs/heads/main$'
+        run: |
+          DIGEST="${{ steps.build.outputs.digest }}"
+          cosign sign --yes "${{ env.IMAGE_SERVER }}@${DIGEST}"
+          cosign verify \
+            --certificate-identity-regexp "$IDENTITY_REGEXP" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${{ env.IMAGE_SERVER }}@${DIGEST}" --output text >/dev/null
+          echo "signed and verified ${{ env.IMAGE_SERVER }}@${DIGEST}" | tee -a "$GITHUB_STEP_SUMMARY"
 
   docker-build-push-web:
     # Runs after semantic-release (not before, see that job) - so a build/push failure here
@@ -285,6 +314,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # OIDC token for Sigstore keyless signing (cosign sign below) - no key material anywhere.
+      id-token: write
     env:
       NEXT_VERSION: ${{ needs.get-version.outputs.next_version }}
     steps:
@@ -324,7 +355,9 @@ jobs:
           docker logs obdgarage-web-smoke
           docker rm -f obdgarage-web-smoke
           exit 1
-      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: docker/web.Dockerfile
@@ -335,6 +368,31 @@ jobs:
             ${{ env.IMAGE_WEB }}:${{ env.NEXT_VERSION }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
+          # Supply chain (2026-09-11 hardening): BuildKit attaches a SLSA provenance attestation
+          # (which commit/workflow built this, from which base image) and an SPDX SBOM to every
+          # per-arch image. They travel as extra "unknown/unknown" platform entries inside the
+          # pushed index - GHCR shows them as such, containerd/k3s ignore them when pulling,
+          # Trivy resolves the real linux/amd64 entry.
+          provenance: mode=max
+          sbom: true
+      # Sigstore keyless signature on the pushed multi-arch manifest DIGEST (2026-09-11
+      # hardening), so every tag pointing at it (version, latest) is covered by one signature.
+      # The signing identity is this workflow's OIDC certificate (repo + workflow path + ref),
+      # the signature and the transparency-log entry live next to the image in GHCR. The verify
+      # step right after is the live proof for this run and the exact identity constraint Flux
+      # will use once its ImagePolicy verification is switched on (cluster phase).
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign the image (Sigstore keyless) and verify
+        env:
+          IDENTITY_REGEXP: '^https://github\.com/lukislp/ObdGarage/\.github/workflows/ci-cd\.yml@refs/heads/main$'
+        run: |
+          DIGEST="${{ steps.build.outputs.digest }}"
+          cosign sign --yes "${{ env.IMAGE_WEB }}@${DIGEST}"
+          cosign verify \
+            --certificate-identity-regexp "$IDENTITY_REGEXP" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${{ env.IMAGE_WEB }}@${DIGEST}" --output text >/dev/null
+          echo "signed and verified ${{ env.IMAGE_WEB }}@${DIGEST}" | tee -a "$GITHUB_STEP_SUMMARY"
 
   trivy-scan:
     needs: [get-version, docker-build-push-server, docker-build-push-web]
