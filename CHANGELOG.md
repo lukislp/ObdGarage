@@ -1,3 +1,10 @@
+## [1.3.5](https://github.com/lukislp/ObdGarage/compare/v1.3.4...v1.3.5) (2026-09-11)
+
+
+### Bug Fixes
+
+* **ci:** read-only GITHUB_TOKEN in the Dependabot auto-merge workflow ([e7c4d79](https://github.com/lukislp/ObdGarage/commit/e7c4d79d0e6b70e573df34564d5cbefe53c4569a))
+
 ## [1.3.4](https://github.com/lukislp/ObdGarage/compare/v1.3.3...v1.3.4) (2026-09-11)
 
 
