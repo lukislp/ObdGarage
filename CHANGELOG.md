@@ -1,3 +1,10 @@
+## [1.3.4](https://github.com/lukislp/ObdGarage/compare/v1.3.3...v1.3.4) (2026-09-11)
+
+
+### Bug Fixes
+
+* **ci:** sign container images with Sigstore, attach SBOM and provenance ([0cc4bb9](https://github.com/lukislp/ObdGarage/commit/0cc4bb91bd2117396e26e56e86a07c6023e036f2))
+
 ## [1.3.3](https://github.com/lukislp/ObdGarage/compare/v1.3.2...v1.3.3) (2026-09-11)
 
 
