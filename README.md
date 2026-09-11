@@ -1,6 +1,6 @@
 # ObdGarage
 
-[![CI/CD](https://github.com/lukislp/ObdGarage/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/lukislp/ObdGarage/actions/workflows/ci-cd.yml)
+[![CI/CD](https://github.com/lukislp/ObdGarage/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/lukislp/ObdGarage/actions/workflows/ci-cd.yml) [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/lukislp/ObdGarage/badge)](https://scorecard.dev/viewer/?uri=github.com/lukislp/ObdGarage) [![CodeQL](https://github.com/lukislp/ObdGarage/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/lukislp/ObdGarage/security/code-scanning)
 [![Release](https://img.shields.io/github/v/release/lukislp/ObdGarage)](https://github.com/lukislp/ObdGarage/releases)
 [![License: AGPL-3.0](https://img.shields.io/github/license/lukislp/ObdGarage)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
