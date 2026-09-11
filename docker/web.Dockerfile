@@ -1,10 +1,9 @@
 # syntax=docker/dockerfile:1.7
 # Build context is the repo root (multi-project solution) - see .github/workflows/ci.yml.
 
-ARG DOTNET_VERSION=10.0
 
 # ---------- Build ----------
-FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION} AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:2fa828c68761b1b8c23d7662dc134421b9d3b59fe1425fdbc80804e390cdb24d AS build
 WORKDIR /src
 
 # Project files first, for Docker layer caching on unchanged dependencies.
@@ -38,7 +37,7 @@ RUN dotnet publish "src/ObdGarage.Web/ObdGarage.Web.csproj" \
     /p:StaticWebAssetsCopyToOutput=true
 
 # ---------- Runtime ----------
-FROM mcr.microsoft.com/dotnet/aspnet:${DOTNET_VERSION} AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:6a94333d37514e385650a3c81a55e5350b67253dbe136e9cf17e499c35606a8c AS runtime
 WORKDIR /app
 
 RUN getent group app || groupadd --system app \
