@@ -212,220 +212,248 @@ jobs:
         run: |
           echo "No releasable commits since the last tag (e.g. docs/ci/chore-only) - this is the expected, common case with Conventional Commits, not a failure. Downstream jobs below skip themselves via needs.get-version.outputs.published." | tee -a "$GITHUB_STEP_SUMMARY"
 
-  docker-build-push-server:
-    # Runs after semantic-release (not before, see that job) - so a build/push failure here
-    # never leaves an orphaned, un-tagged GHCR image blocking every future release via the
-    # duplicate-tag guard below.
+  # One native runner per platform instead of a single QEMU-emulated multi-platform build -
+  # ubuntu-24.04-arm is a real arm64 GitHub-hosted runner (free for public repos), so that leg
+  # runs at native speed (same pattern as lukislp/studylife). Each leg pushes by digest only;
+  # docker-manifest-merge below writes the actual :latest/:<version> tags, and only after Trivy
+  # passed on the amd64 image. Runs after semantic-release (not before): a build failure here
+  # never leaves an orphaned, un-tagged GHCR image behind.
+  docker-build-push:
     needs: [get-version, semantic-release]
     if: github.event_name == 'push' && needs.get-version.outputs.published == 'true'
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        image: [server, web]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+          - image: server
+            registry_image: ghcr.io/lukislp/obdgarage-server
+            dockerfile: docker/server.Dockerfile
+            context: .
+          - image: web
+            registry_image: ghcr.io/lukislp/obdgarage-web
+            dockerfile: docker/web.Dockerfile
+            context: .
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
-      # OIDC token for Sigstore keyless signing (cosign sign below) - no key material anywhere.
-      id-token: write
     env:
       NEXT_VERSION: ${{ needs.get-version.outputs.next_version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Guard against duplicate tag
-        run: |
-          if docker manifest inspect "${{ env.IMAGE_SERVER }}:${{ env.NEXT_VERSION }}" >/dev/null 2>&1; then
-            echo "::error::registry tag ${{ env.NEXT_VERSION }} already exists (version race with a parallel run). Do NOT retry this run; wait for it to finish, then push again to produce a fresh version."
-            exit 1
-          fi
-      # Build once, load it locally (amd64 only, matching the runner) to smoke-check
-      # before pushing anything multi-arch.
+      # Smoke check on every leg (the runner is native for its platform, so the image can be
+      # loaded and started locally) before anything is pushed.
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
-          context: .
-          file: docker/server.Dockerfile
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           load: true
-          tags: obdgarage-server:smoke-check
-          cache-from: type=gha,scope=server
-      - name: Smoke-check the built image
+          tags: ${{ matrix.image }}:smoke-check
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+      - if: matrix.image == 'server'
+        name: Smoke-check the built image
         run: |
-          docker run -d --name obdgarage-server-smoke -p 5299:5299 -e InviteCode=smoke-test obdgarage-server:smoke-check
+          docker run -d --name smoke -p 5299:5299 -e InviteCode=smoke-test server:smoke-check
           for i in $(seq 1 30); do
             if curl -sf http://localhost:5299/api/v1/health > /dev/null; then
               echo "container is healthy"
-              docker rm -f obdgarage-server-smoke
+              docker rm -f smoke
               exit 0
             fi
             sleep 2
           done
           echo "::error::container did not become healthy in time"
-          docker logs obdgarage-server-smoke
-          docker rm -f obdgarage-server-smoke
+          docker logs smoke
+          docker rm -f smoke
           exit 1
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: docker/server.Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.IMAGE_SERVER }}:latest
-            ${{ env.IMAGE_SERVER }}:${{ env.NEXT_VERSION }}
-          cache-from: type=gha,scope=server
-          cache-to: type=gha,mode=max,scope=server
-          # Supply chain (2026-09-11 hardening): BuildKit attaches a SLSA provenance attestation
-          # (which commit/workflow built this, from which base image) and an SPDX SBOM to every
-          # per-arch image. They travel as extra "unknown/unknown" platform entries inside the
-          # pushed index - GHCR shows them as such, containerd/k3s ignore them when pulling,
-          # Trivy resolves the real linux/amd64 entry.
-          provenance: mode=max
-          sbom: true
-      # Sigstore keyless signature on the pushed multi-arch manifest DIGEST (2026-09-11
-      # hardening), so every tag pointing at it (version, latest) is covered by one signature.
-      # The signing identity is this workflow's OIDC certificate (repo + workflow path + ref),
-      # the signature and the transparency-log entry live next to the image in GHCR. The verify
-      # step right after is the live proof for this run and the exact identity constraint Flux
-      # will use once its ImagePolicy verification is switched on (cluster phase).
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-      - name: Sign the image (Sigstore keyless) and verify
-        env:
-          IDENTITY_REGEXP: '^https://github\.com/lukislp/ObdGarage/\.github/workflows/ci-cd\.yml@refs/heads/main$'
+      - if: matrix.image == 'web'
+        name: Smoke-check the built image
         run: |
-          DIGEST="${{ steps.build.outputs.digest }}"
-          cosign sign --yes "${{ env.IMAGE_SERVER }}@${DIGEST}"
-          cosign verify \
-            --certificate-identity-regexp "$IDENTITY_REGEXP" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "${{ env.IMAGE_SERVER }}@${DIGEST}" --output text >/dev/null
-          echo "signed and verified ${{ env.IMAGE_SERVER }}@${DIGEST}" | tee -a "$GITHUB_STEP_SUMMARY"
-
-  docker-build-push-web:
-    # Runs after semantic-release (not before, see that job) - so a build/push failure here
-    # never leaves an orphaned, un-tagged GHCR image blocking every future release via the
-    # duplicate-tag guard below.
-    needs: [get-version, semantic-release]
-    if: github.event_name == 'push' && needs.get-version.outputs.published == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      # OIDC token for Sigstore keyless signing (cosign sign below) - no key material anywhere.
-      id-token: write
-    env:
-      NEXT_VERSION: ${{ needs.get-version.outputs.next_version }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
-      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Guard against duplicate tag
-        run: |
-          if docker manifest inspect "${{ env.IMAGE_WEB }}:${{ env.NEXT_VERSION }}" >/dev/null 2>&1; then
-            echo "::error::registry tag ${{ env.NEXT_VERSION }} already exists (version race with a parallel run). Do NOT retry this run; wait for it to finish, then push again to produce a fresh version."
-            exit 1
-          fi
-      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: docker/web.Dockerfile
-          load: true
-          tags: obdgarage-web:smoke-check
-          cache-from: type=gha,scope=web
-      - name: Smoke-check the built image
-        run: |
-          docker run -d --name obdgarage-web-smoke -p 5199:5199 obdgarage-web:smoke-check
+          docker run -d --name smoke -p 5199:5199  web:smoke-check
           for i in $(seq 1 30); do
             if curl -sf http://localhost:5199/ > /dev/null; then
               echo "container is healthy"
-              docker rm -f obdgarage-web-smoke
+              docker rm -f smoke
               exit 0
             fi
             sleep 2
           done
           echo "::error::container did not become healthy in time"
-          docker logs obdgarage-web-smoke
-          docker rm -f obdgarage-web-smoke
+          docker logs smoke
+          docker rm -f smoke
           exit 1
-      - name: Build and push
+      - name: Build and push by digest
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
-          context: .
-          file: docker/web.Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ env.IMAGE_WEB }}:latest
-            ${{ env.IMAGE_WEB }}:${{ env.NEXT_VERSION }}
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,mode=max,scope=web
-          # Supply chain (2026-09-11 hardening): BuildKit attaches a SLSA provenance attestation
-          # (which commit/workflow built this, from which base image) and an SPDX SBOM to every
-          # per-arch image. They travel as extra "unknown/unknown" platform entries inside the
-          # pushed index - GHCR shows them as such, containerd/k3s ignore them when pulling,
-          # Trivy resolves the real linux/amd64 entry.
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ matrix.registry_image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
           provenance: mode=max
           sbom: true
-      # Sigstore keyless signature on the pushed multi-arch manifest DIGEST (2026-09-11
-      # hardening), so every tag pointing at it (version, latest) is covered by one signature.
-      # The signing identity is this workflow's OIDC certificate (repo + workflow path + ref),
-      # the signature and the transparency-log entry live next to the image in GHCR. The verify
-      # step right after is the live proof for this run and the exact identity constraint Flux
-      # will use once its ImagePolicy verification is switched on (cluster phase).
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-      - name: Sign the image (Sigstore keyless) and verify
-        env:
-          IDENTITY_REGEXP: '^https://github\.com/lukislp/ObdGarage/\.github/workflows/ci-cd\.yml@refs/heads/main$'
+      - name: Export digest
         run: |
-          DIGEST="${{ steps.build.outputs.digest }}"
-          cosign sign --yes "${{ env.IMAGE_WEB }}@${DIGEST}"
-          cosign verify \
-            --certificate-identity-regexp "$IDENTITY_REGEXP" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "${{ env.IMAGE_WEB }}@${DIGEST}" --output text >/dev/null
-          echo "signed and verified ${{ env.IMAGE_WEB }}@${DIGEST}" | tee -a "$GITHUB_STEP_SUMMARY"
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-${{ matrix.image }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
 
+  # Scans the amd64 image by digest before any tag exists: HIGH/CRITICAL are reported, a
+  # CRITICAL with an available fix blocks the tag push (docker-manifest-merge needs this job).
   trivy-scan:
-    needs: [get-version, docker-build-push-server, docker-build-push-web]
+    needs: [get-version, docker-build-push]
     if: github.event_name == 'push' && needs.get-version.outputs.published == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        image: [server, web]
+        include:
+          - image: server
+            registry_image: ghcr.io/lukislp/obdgarage-server
+            dockerfile: docker/server.Dockerfile
+            context: .
+          - image: web
+            registry_image: ghcr.io/lukislp/obdgarage-web
+            dockerfile: docker/web.Dockerfile
+            context: .
     concurrency:
-      group: obdgarage-release-chain
+      group: obdgarage-release-chain-${{ matrix.image }}
       cancel-in-progress: false
     permissions:
       contents: read
       packages: read
-    env:
-      NEXT_VERSION: ${{ needs.get-version.outputs.next_version }}
-    strategy:
-      matrix:
-        image: [server, web]
     steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: digests-${{ matrix.image }}-amd64
+          path: /tmp/digests
+      - name: Resolve amd64 digest reference
+        run: echo "IMAGE_REF=${{ matrix.registry_image }}@sha256:$(ls /tmp/digests | head -1)" >> "$GITHUB_ENV"
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      - name: Report HIGH and CRITICAL (informational)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ matrix.image == 'server' && env.IMAGE_SERVER || env.IMAGE_WEB }}:${{ env.NEXT_VERSION }}
+          image-ref: ${{ env.IMAGE_REF }}
           format: table
           severity: HIGH,CRITICAL
           exit-code: "0"
+      - name: Gate on CRITICAL
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_REF }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  docker-manifest-merge:
+    needs: [get-version, docker-build-push, trivy-scan]
+    if: github.event_name == 'push' && needs.get-version.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        image: [server, web]
+        include:
+          - image: server
+            registry_image: ghcr.io/lukislp/obdgarage-server
+            dockerfile: docker/server.Dockerfile
+            context: .
+          - image: web
+            registry_image: ghcr.io/lukislp/obdgarage-web
+            dockerfile: docker/web.Dockerfile
+            context: .
+    concurrency:
+      group: obdgarage-release-chain-${{ matrix.image }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    env:
+      NEXT_VERSION: ${{ needs.get-version.outputs.next_version }}
+      IMAGE: ${{ matrix.registry_image }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ matrix.image }}-*
+          merge-multiple: true
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      # A version tag that already exists is re-pointed at this commit's content instead of
+      # failing the run: a parallel run's version race can leave stale content under the tag.
+      - name: Check for a stale version tag (self-healing, does not block)
+        id: check
+        run: |
+          SHA_TAG="sha-${GITHUB_SHA::7}"
+          echo "sha_tag=$SHA_TAG" >> "$GITHUB_OUTPUT"
+          if docker manifest inspect "${{ env.IMAGE }}:${{ env.NEXT_VERSION }}" >/dev/null 2>&1; then
+            if docker manifest inspect "${{ env.IMAGE }}:${SHA_TAG}" >/dev/null 2>&1; then
+              echo "Tag ${{ env.NEXT_VERSION }} already reflects this exact commit ($SHA_TAG) - re-tagging below is a harmless no-op."
+            else
+              echo "::warning::registry tag ${{ env.NEXT_VERSION }} already exists but was NOT built from this commit (no matching $SHA_TAG) - overwriting it with the content for $GITHUB_SHA."
+            fi
+          fi
+      - name: Create and push the multi-arch manifest
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            -t "${{ env.IMAGE }}:${{ env.NEXT_VERSION }}" \
+            -t "${{ env.IMAGE }}:latest" \
+            -t "${{ env.IMAGE }}:${{ steps.check.outputs.sha_tag }}" \
+            $(printf "${{ env.IMAGE }}@sha256:%s " *)
+      - name: Inspect the pushed manifest
+        run: docker buildx imagetools inspect "${{ env.IMAGE }}:${{ env.NEXT_VERSION }}"
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign the multi-arch manifest (Sigstore keyless) and verify
+        env:
+          IDENTITY_REGEXP: '^https://github\.com/lukislp/ObdGarage/\.github/workflows/ci-cd\.yml@refs/heads/main$'
+        run: |
+          DIGEST="$(docker buildx imagetools inspect "${{ env.IMAGE }}:${{ env.NEXT_VERSION }}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          cosign sign --yes "${{ env.IMAGE }}@${DIGEST}"
+          cosign verify \
+            --certificate-identity-regexp "$IDENTITY_REGEXP" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${{ env.IMAGE }}@${DIGEST}" --output text >/dev/null
+          echo "signed and verified ${{ env.IMAGE }}@${DIGEST}" | tee -a "$GITHUB_STEP_SUMMARY"
 
   semantic-release:
     # get-version listed explicitly (not just transitively) so its outputs are reliably
     # accessible below - GitHub Actions' needs context only guarantees access to
-    # directly-listed dependencies. Runs before docker-build-push-server/web now (see those
+    # directly-listed dependencies. Runs before docker-manifest-merge/web now (see those
     # jobs' comments) - the real tag/release must exist before anything is published under
     # that version, so a build/push failure can't leave an orphaned, un-tagged GHCR image
     # blocking every future release via the duplicate-tag guard.
