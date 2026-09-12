@@ -147,7 +147,7 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
           restore-keys: |
             nuget-${{ runner.os }}-
-      - run: dotnet restore ObdGarage.slnx
+      - run: dotnet restore ObdGarage.slnx --locked-mode
       - run: dotnet build ObdGarage.slnx --configuration ${{ env.CONFIGURATION }} --no-restore
 
   # ---------------------------------------------------------------------

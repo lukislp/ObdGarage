@@ -7,15 +7,17 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:2fa828c68761b1b8c23d7662dc134421b9
 WORKDIR /src
 
 # Project files first, for Docker layer caching on unchanged dependencies.
-COPY ["src/ObdGarage.Web/ObdGarage.Web.csproj", "src/ObdGarage.Web/"]
-COPY ["src/ObdGarage.UI/ObdGarage.UI.csproj", "src/ObdGarage.UI/"]
-COPY ["src/ObdGarage.Core/ObdGarage.Core.csproj", "src/ObdGarage.Core/"]
-COPY ["src/ObdGarage.Application/ObdGarage.Application.csproj", "src/ObdGarage.Application/"]
-COPY ["src/ObdGarage.Data/ObdGarage.Data.csproj", "src/ObdGarage.Data/"]
-COPY ["src/ObdGarage.Obd/ObdGarage.Obd.csproj", "src/ObdGarage.Obd/"]
-COPY ["src/ObdGarage.Shared/ObdGarage.Shared.csproj", "src/ObdGarage.Shared/"]
+COPY ["Directory.Build.props", "./"]
+COPY ["src/ObdGarage.Web/ObdGarage.Web.csproj", "src/ObdGarage.Web/packages.lock.json", "src/ObdGarage.Web/"]
+COPY ["src/ObdGarage.UI/ObdGarage.UI.csproj", "src/ObdGarage.UI/packages.lock.json", "src/ObdGarage.UI/"]
+COPY ["src/ObdGarage.Core/ObdGarage.Core.csproj", "src/ObdGarage.Core/packages.lock.json", "src/ObdGarage.Core/"]
+COPY ["src/ObdGarage.Application/ObdGarage.Application.csproj", "src/ObdGarage.Application/packages.lock.json", "src/ObdGarage.Application/"]
+COPY ["src/ObdGarage.Data/ObdGarage.Data.csproj", "src/ObdGarage.Data/packages.lock.json", "src/ObdGarage.Data/"]
+COPY ["src/ObdGarage.Obd/ObdGarage.Obd.csproj", "src/ObdGarage.Obd/packages.lock.json", "src/ObdGarage.Obd/"]
+COPY ["src/ObdGarage.Shared/ObdGarage.Shared.csproj", "src/ObdGarage.Shared/packages.lock.json", "src/ObdGarage.Shared/"]
 
-RUN dotnet restore "src/ObdGarage.Web/ObdGarage.Web.csproj"
+# --locked-mode: the restore must match the committed packages.lock.json files exactly.
+RUN dotnet restore "src/ObdGarage.Web/ObdGarage.Web.csproj" --locked-mode
 
 COPY src/ObdGarage.Web/ src/ObdGarage.Web/
 COPY src/ObdGarage.UI/ src/ObdGarage.UI/
