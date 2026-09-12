@@ -1,4 +1,4 @@
-# Weekly Dependabot updates: GitHub Actions and NuGet (grouped). MAUI packages follow the workload, not Dependabot.
+# Weekly Dependabot updates: GitHub Actions, NuGet (grouped) and the Docker base images. MAUI packages follow the workload, not Dependabot.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -21,3 +21,14 @@ updates:
       - dependency-name: "Microsoft.AspNetCore.Components.WebView.Maui"
     commit-message:
       prefix: "fix(deps)"
+  # docker/server.Dockerfile and docker/web.Dockerfile: base-image digest bumps arrive as PRs like
+  # in the sibling repos; a base-image MAJOR bump (new .NET line) is a deliberate upgrade instead.
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "fix(docker)"
