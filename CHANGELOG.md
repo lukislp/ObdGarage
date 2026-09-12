@@ -1,3 +1,10 @@
+## [1.3.8](https://github.com/lukislp/ObdGarage/compare/v1.3.7...v1.3.8) (2026-09-12)
+
+
+### Bug Fixes
+
+* keep out-of-range form numbers and non-hex DTC digits from throwing ([#31](https://github.com/lukislp/ObdGarage/issues/31)) ([92b0937](https://github.com/lukislp/ObdGarage/commit/92b0937d38bf762cc548dd9603e524e67db3122b))
+
 ## [1.3.7](https://github.com/lukislp/ObdGarage/compare/v1.3.6...v1.3.7) (2026-09-12)
 
 
