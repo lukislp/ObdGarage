@@ -15,4 +15,10 @@
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Implicit SDK package pinned explicitly so packages.lock.json stays valid across SDK
+         patches (its implicit version follows the installed SDK); Dependabot bumps it. -->
+    <PackageReference Include="Microsoft.AspNetCore.App.Internal.Assets" Version="10.0.12" />
+  </ItemGroup>
+
 </Project>

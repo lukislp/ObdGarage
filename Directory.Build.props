@@ -1,0 +1,16 @@
+<Project>
+  <!--
+    NuGet lock files (packages.lock.json next to every project): restore resolves exactly the
+    recorded package graph, and in CI (GitHub Actions sets CI=true) as well as in the Docker
+    builds the restore fails instead of silently updating the lock when a csproj and its lock
+    file disagree (OpenSSF Scorecard Pinned-Dependencies). Dependabot updates the lock files
+    together with the csproj versions; locally a plain `dotnet restore` refreshes them.
+    The MAUI app is the one project without a lock file: its implicit workload packages
+    (runtime packs, build tasks) are versioned by the installed workload set, so a lock written
+    on one machine fails locked-mode restore on the next workload update.
+  -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' != 'ObdGarage.App'">
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+  </PropertyGroup>
+</Project>
