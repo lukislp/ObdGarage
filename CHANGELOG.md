@@ -1,3 +1,10 @@
+## [1.3.6](https://github.com/lukislp/ObdGarage/compare/v1.3.5...v1.3.6) (2026-09-12)
+
+
+### Bug Fixes
+
+* **ci:** Bump docker/setup-qemu-action from 4.2.0 to 4.3.0 ([2d2c042](https://github.com/lukislp/ObdGarage/commit/2d2c0423eb0ca0332372403ccfdf5d33f3f10253))
+
 ## [1.3.5](https://github.com/lukislp/ObdGarage/compare/v1.3.4...v1.3.5) (2026-09-11)
 
 
