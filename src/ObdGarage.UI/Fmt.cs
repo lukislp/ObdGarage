@@ -51,8 +51,21 @@ public static class Fmt
         return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : null;
     }
 
-    public static decimal? ParseDecimal(string? raw) =>
-        ParseDouble(raw) is { } d ? (decimal)d : null;
+    public static decimal? ParseDecimal(string? raw)
+    {
+        // "1e300" or "Infinity" parse as doubles but do not fit a decimal - a form field must
+        // never turn that into an OverflowException (found by the property tests).
+        if (ParseDouble(raw) is not { } d || !double.IsFinite(d))
+            return null;
+        try
+        {
+            return (decimal)d;
+        }
+        catch (OverflowException)
+        {
+            return null;
+        }
+    }
 
     public static int? ParseInt(string? raw) =>
         int.TryParse(raw?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : null;

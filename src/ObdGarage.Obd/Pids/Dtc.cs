@@ -62,6 +62,8 @@ public static class Dtc
         var digit1 = code[1] - '0';
         if (digit1 is < 0 or > 3)
             throw new ArgumentException($"Erste DTC-Ziffer muss 0-3 sein: '{code}'.", nameof(code));
+        if (!Uri.IsHexDigit(code[2]) || !Uri.IsHexDigit(code[3]) || !Uri.IsHexDigit(code[4]))
+            throw new ArgumentException($"DTC-Ziffern 3-5 müssen Hex-Ziffern sein: '{code}'.", nameof(code));
         var digit2 = Convert.ToByte(code[2].ToString(), 16);
         var digit3 = Convert.ToByte(code[3].ToString(), 16);
         var digit4 = Convert.ToByte(code[4].ToString(), 16);
