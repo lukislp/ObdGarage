@@ -1,3 +1,10 @@
+## [1.3.7](https://github.com/lukislp/ObdGarage/compare/v1.3.6...v1.3.7) (2026-09-12)
+
+
+### Bug Fixes
+
+* **deps:** Bump Microsoft.AspNetCore.Components.Web and 3 others ([27a8cd1](https://github.com/lukislp/ObdGarage/commit/27a8cd1bb7498cba023f9d15a4d3121a4d5fdd2e))
+
 ## [1.3.6](https://github.com/lukislp/ObdGarage/compare/v1.3.5...v1.3.6) (2026-09-12)
 
 
