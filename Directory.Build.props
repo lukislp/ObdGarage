@@ -13,4 +13,12 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
   </PropertyGroup>
+  <!--
+    Warnings are errors, repo-wide: the build is warning-free today (2026-09-12 CI audit) and
+    this keeps it that way - a new warning fails the PR instead of accumulating. Same setting
+    as the other .NET repos; analyzer levels stay at the SDK defaults.
+  -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
 </Project>
