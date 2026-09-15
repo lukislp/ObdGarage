@@ -1,85 +1,85 @@
-# MAUI-Setup — ObdGarage.App auf Android/iOS bauen
+# MAUI setup — building ObdGarage.App for Android/iOS
 
-`src/ObdGarage.App` ist die .NET-MAUI-Blazor-Hybrid-Hülle (Plan 2.1). Sie ist
-**bewusst nicht in `ObdGarage.slnx` eingetragen**, damit `dotnet build`/`dotnet test`
-der Solution auch auf Maschinen ohne MAUI-Workload (CI, Sandbox) funktionieren.
+`src/ObdGarage.App` is the .NET MAUI Blazor Hybrid shell (Plan 2.1). It is
+**deliberately not listed in `ObdGarage.slnx`**, so that `dotnet build`/`dotnet test`
+on the solution keep working on machines without the MAUI workload (CI, sandbox).
 
-Voraussetzungen: Windows oder macOS mit .NET 10 SDK. Für iOS zwingend ein Mac
-(bzw. Windows + Mac im Netz für "Pair to Mac") mit aktuellem Xcode.
+Requirements: Windows or macOS with the .NET 10 SDK. iOS strictly requires a Mac
+(or Windows plus a Mac on the network for "Pair to Mac") with a current Xcode.
 
-## 1. MAUI-Workload installieren
+## 1. Install the MAUI workload
 
 ```bash
 dotnet workload install maui
-# Prüfen:
+# Verify:
 dotnet workload list
 ```
 
-Das Workload liefert auch `$(MauiVersion)` — die beiden PackageReferences in
+The workload also supplies `$(MauiVersion)` — that is how the two PackageReferences in
 `ObdGarage.App.csproj` (`Microsoft.Maui.Controls`, `Microsoft.AspNetCore.Components.WebView.Maui`)
-lösen sich damit ohne manuelle Versionsangabe auf.
+resolve without an explicit version.
 
-## 2. Projekt zur Solution hinzufügen
+## 2. Add the project to the solution
 
 ```bash
 cd ObdGarage
 dotnet sln ObdGarage.slnx add src/ObdGarage.App/ObdGarage.App.csproj
 ```
 
-(Wieder entfernen: `dotnet sln ObdGarage.slnx remove src/ObdGarage.App/ObdGarage.App.csproj` —
-z.B. bevor auf einer Maschine ohne Workload gebaut wird.)
+(To remove it again: `dotnet sln ObdGarage.slnx remove src/ObdGarage.App/ObdGarage.App.csproj` —
+e.g. before building on a machine without the workload.)
 
-## 3. Android bauen und deployen
+## 3. Build and deploy for Android
 
 ```bash
-# Nur bauen:
+# Build only:
 dotnet build src/ObdGarage.App -f net10.0-android
 
-# APK aufs per USB verbundene Gerät (USB-Debugging aktivieren!):
+# APK onto the device connected over USB (enable USB debugging!):
 dotnet build src/ObdGarage.App -f net10.0-android -t:Run
 
-# Alternativ manuell per adb:
+# Alternatively by hand via adb:
 dotnet publish src/ObdGarage.App -f net10.0-android -c Release
 adb install src/ObdGarage.App/bin/Release/net10.0-android/publish/com.obdgarage.mobile-Signed.apk
-adb devices          # Gerät sichtbar?
-adb logcat -s DOTNET # Logs der App
+adb devices          # device visible?
+adb logcat -s DOTNET # the app's logs
 ```
 
-Hinweise Android:
-- Emulator reicht für UI-Arbeit; für Bluetooth Classic braucht es ein echtes Gerät.
-- Ab Android 12 sind `BLUETOOTH_CONNECT`/`BLUETOOTH_SCAN` **Laufzeit**-Berechtigungen:
-  vor dem ersten Verbinden `Permissions.RequestAsync<Permissions.Bluetooth>()` aufrufen
-  (das Manifest ist schon vorbereitet, inkl. `neverForLocation`).
-- Der ELM327-Adapter muss vorher in den Android-Einstellungen gekoppelt sein
-  (PIN meist `1234` oder `0000`); die App verbindet dann per MAC-Adresse über
-  `BluetoothClassicTransport` (SPP-UUID 00001101-0000-1000-8000-00805F9B34FB).
+Android notes:
+- An emulator is enough for UI work; Bluetooth Classic needs a real device.
+- From Android 12 on, `BLUETOOTH_CONNECT`/`BLUETOOTH_SCAN` are **runtime** permissions:
+  call `Permissions.RequestAsync<Permissions.Bluetooth>()` before the first connection
+  (the manifest is already prepared, including `neverForLocation`).
+- The ELM327 adapter has to be paired in the Android settings beforehand
+  (PIN is usually `1234` or `0000`); the app then connects by MAC address through
+  `BluetoothClassicTransport` (SPP UUID 00001101-0000-1000-8000-00805F9B34FB).
 
-## 4. iOS bauen
+## 4. Build for iOS
 
 ```bash
-# Auf dem Mac (Gerät per Kabel, in Xcode einmal als vertrauenswürdig einrichten):
+# On the Mac (device connected by cable, trusted once in Xcode):
 dotnet build src/ObdGarage.App -f net10.0-ios -t:Run
 
-# Von Windows aus: "Pair to Mac" in Visual Studio, oder direkt auf dem Mac bauen.
+# From Windows: "Pair to Mac" in Visual Studio, or build directly on the Mac.
 ```
 
-Wichtige iOS-Einschränkungen (Plan 2.1/8):
-- **Bluetooth Classic (SPP) geht auf iOS NICHT** — die billigen ELM327-BT-Adapter
-  funktionieren dort nie. Nutzbar sind nur **BLE**-Adapter (z.B. vLinker MC+,
-  OBDLink CX — Umsetzung: `Services/BleTransport.cs`, Phase 7) und **WLAN**-Adapter
-  (`WifiTcpTransport`, funktioniert heute schon).
-- Beim ersten TCP-Zugriff auf den WLAN-Adapter/Heimserver zeigt iOS den
-  Local-Network-Dialog (`NSLocalNetworkUsageDescription` ist in der Info.plist gesetzt).
-- Für Geräte-Builds sind Apple-Entwicklerkonto + Provisioning nötig; Verteilung
-  an Tester über TestFlight (Phase 7).
+Important iOS limitations (Plan 2.1/8):
+- **Bluetooth Classic (SPP) does NOT work on iOS** — the cheap ELM327 BT adapters
+  will never work there. Only **BLE** adapters (e.g. vLinker MC+,
+  OBDLink CX — implementation: `Services/BleTransport.cs`, Phase 7) and **Wi-Fi** adapters
+  (`WifiTcpTransport`, already working today) are usable.
+- On the first TCP access to the Wi-Fi adapter/home server, iOS shows the
+  local-network dialog (`NSLocalNetworkUsageDescription` is set in the Info.plist).
+- Device builds need an Apple developer account plus provisioning; distribution
+  to testers goes through TestFlight (Phase 7).
 
-## 5. Web-UI in eine gemeinsame Razor Class Library (ObdGarage.UI) extrahieren
+## 5. Extract the web UI into a shared Razor Class Library (ObdGarage.UI)
 
-Die Seiten in `src/ObdGarage.Web/Components` sind bereits UI-dünn (Services statt
-Logik in den Komponenten) — sie lassen sich darum schrittweise in eine RCL
-verschieben, die Web **und** MAUI teilen:
+The pages in `src/ObdGarage.Web/Components` are already UI-thin (services instead of
+logic in the components) — which is why they can be moved step by step into an RCL
+shared by Web **and** MAUI:
 
-1. RCL anlegen und referenzieren:
+1. Create and reference the RCL:
    ```bash
    dotnet new razorclasslib -n ObdGarage.UI -o src/ObdGarage.UI
    dotnet sln ObdGarage.slnx add src/ObdGarage.UI/ObdGarage.UI.csproj
@@ -87,41 +87,41 @@ verschieben, die Web **und** MAUI teilen:
    dotnet add src/ObdGarage.Web reference src/ObdGarage.UI
    dotnet add src/ObdGarage.App reference src/ObdGarage.UI
    ```
-2. Komponenten umziehen: Seiten/Teile aus `ObdGarage.Web/Components` nach
-   `src/ObdGarage.UI/` verschieben, Namespaces auf `ObdGarage.UI.…` anpassen und in
-   beiden Hosts per `@using ObdGarage.UI` einbinden. **Nicht** mitnehmen:
-   Web-spezifisches wie `App.razor`/`Routes.razor` (bleiben im Web) — die MAUI-App
-   bekommt eine eigene `Routes.razor` mit `<Router AppAssembly="typeof(ObdGarage.UI.…).Assembly">`.
-3. Dienste-Verdrahtung bleibt pro Host: Beide registrieren dieselben Services
-   (siehe `ObdGarage.Web/Program.cs` vs. `ObdGarage.App/MauiProgram.cs`) — die
-   Komponenten injizieren nur Interfaces/Services und merken nicht, wo sie laufen.
-4. Statische Assets der RCL landen unter `_content/ObdGarage.UI/…` — Pfade in
-   `index.html` (MAUI) bzw. `App.razor` (Web) entsprechend ergänzen.
-5. Unterschiedliches Verhalten (z.B. ConnectionManager mit Bluetooth nur in der
-   App) über je Host registrierte Zusatzservices lösen, nicht über `#if` in der UI.
-6. Danach `Components/Main.razor` in ObdGarage.App durch die echte Startseite aus
-   der RCL ersetzen (RootComponent in `MainPage.xaml` umstellen).
+2. Move the components: move pages/parts out of `ObdGarage.Web/Components` into
+   `src/ObdGarage.UI/`, adjust the namespaces to `ObdGarage.UI.…` and pull them into
+   both hosts with `@using ObdGarage.UI`. Do **not** take along
+   web-specific things like `App.razor`/`Routes.razor` (those stay in Web) — the MAUI app
+   gets its own `Routes.razor` with `<Router AppAssembly="typeof(ObdGarage.UI.…).Assembly">`.
+3. Service wiring stays per host: both register the same services
+   (see `ObdGarage.Web/Program.cs` vs. `ObdGarage.App/MauiProgram.cs`) — the
+   components only inject interfaces/services and never notice where they run.
+4. The RCL's static assets end up under `_content/ObdGarage.UI/…` — extend the paths in
+   `index.html` (MAUI) and `App.razor` (Web) accordingly.
+5. Solve differing behaviour (e.g. ConnectionManager with Bluetooth only in the
+   app) with additional services registered per host, not with `#if` in the UI.
+6. Afterwards, replace `Components/Main.razor` in ObdGarage.App with the real start page from
+   the RCL (switch the RootComponent in `MainPage.xaml`).
 
-## 6. Backend im Heimnetz (Sync)
+## 6. Backend on the home network (sync)
 
-- Standardport des Servers laut `src/ObdGarage.Server/Properties/launchSettings.json`:
-  **http://localhost:5235**. Vom Handy aus ist `localhost` der falsche Host —
-  Server auf allen Interfaces lauschen lassen:
+- The server's default port according to `src/ObdGarage.Server/Properties/launchSettings.json`:
+  **http://localhost:5235**. From the phone, `localhost` is the wrong host —
+  make the server listen on all interfaces:
   ```bash
   dotnet run --project src/ObdGarage.Server --urls http://0.0.0.0:5235
   ```
-  (oder `applicationUrl` in den launchSettings auf `http://0.0.0.0:5235` ändern
-  und die Firewall des Rechners für den Port freigeben).
-- In `src/ObdGarage.App/MauiProgram.cs` die Konstante `DefaultSyncBaseUrl` auf die
-  Heimnetz-IP des Servers setzen (z.B. `http://192.168.0.100:5235/`) — bis eine
-  Einstellungsseite das übernimmt.
-- Android-Emulator: der Host-Rechner ist dort `10.0.2.2`, nicht `192.168.x.x`.
-- Unterwegs (Plan 8): Tailscale/WireGuard statt offenem Port; sobald der Server
-  das Heimnetz verlässt, nur noch HTTPS und Token in `SecureStorage`.
+  (or change `applicationUrl` in the launchSettings to `http://0.0.0.0:5235`
+  and open the port in the machine's firewall).
+- In `src/ObdGarage.App/MauiProgram.cs`, set the `DefaultSyncBaseUrl` constant to the
+  server's home-network IP (e.g. `http://192.168.0.100:5235/`) — until a settings
+  page takes that over.
+- Android emulator: the host machine is `10.0.2.2` there, not `192.168.x.x`.
+- On the road (Plan 8): Tailscale/WireGuard instead of an open port; as soon as the server
+  leaves the home network, HTTPS only, and tokens in `SecureStorage`.
 
-## 7. Bekannte Stolpersteine
+## 7. Known pitfalls
 
-- `XA5300 / Android SDK nicht gefunden`: einmal `dotnet build -t:InstallAndroidDependencies -f net10.0-android` ausführen oder SDK-Pfad via `AndroidSdkDirectory` setzen.
-- Erster Android-Build lädt viel nach (AOT-Profile, SDK-Teile) — dauert.
-- `Simulator testen` in der App funktioniert komplett offline — idealer erster
-  Smoke-Test auf jedem Gerät, bevor echte Adapter ins Spiel kommen.
+- `XA5300 / Android SDK not found`: run `dotnet build -t:InstallAndroidDependencies -f net10.0-android` once, or set the SDK path via `AndroidSdkDirectory`.
+- The first Android build downloads a lot (AOT profiles, SDK parts) — it takes a while.
+- Testing against the simulator in the app works completely offline — the ideal first
+  smoke test on any device, before real adapters come into play.
