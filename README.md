@@ -80,7 +80,7 @@ courtesy.
 | `src/ObdGarage.Shared` | DTOs shared between app and backend |
 | `src/ObdGarage.UI` | Razor Class Library - the actual pages/layout, shared by `ObdGarage.Web` and `ObdGarage.App` so the two never drift apart |
 | `src/ObdGarage.Web` | Blazor Interactive Server host for `ObdGarage.UI`, no external JS dependencies |
-| `src/ObdGarage.App` | .NET MAUI shell (Android/iOS) hosting the same `ObdGarage.UI`, incl. Android Bluetooth Classic transport - builds clean for Android, needs the MAUI workload, not part of the solution file |
+| `src/ObdGarage.App` | .NET MAUI shell (Android/iOS) hosting the same `ObdGarage.UI`, incl. Android Bluetooth Classic transport - builds clean for Android, needs the MAUI workload, not part of the solution file (see [docs/MAUI-SETUP.md](docs/MAUI-SETUP.md)) |
 | `tests/ObdGarage.Tests` | xUnit - OBD core (PID/DTC decoding, whitelist, client behavior), EF Core/SQLite persistence, and regression coverage for bugs found across the app |
 | `tools/ObdGarage.TestRunner` | Full application/E2E/sync suite, dependency-free (compiles without NuGet) |
 
@@ -102,6 +102,16 @@ ASPNETCORE_URLS=http://127.0.0.1:5199 dotnet run --project src/ObdGarage.Web --n
 
 `src/ObdGarage.Web/launchSettings.json` overrides `ASPNETCORE_URLS`, so `--no-launch-profile` is
 required for the commands above to take effect.
+
+### Mobile app (Android/iOS)
+
+`src/ObdGarage.App` is the .NET MAUI shell around the same `ObdGarage.UI` components. It needs
+the MAUI workload and is deliberately left out of `ObdGarage.slnx`, so the solution keeps
+building on machines without that workload — which is why the commands above never touch it.
+[docs/MAUI-SETUP.md](docs/MAUI-SETUP.md) covers the whole path: installing the workload, adding
+the project to the solution, building and deploying for Android and iOS, the per-platform
+transport limitations (no Bluetooth Classic on iOS), pointing the app at a backend on your home
+network, and the pitfalls worth knowing about up front.
 
 ## Deployment
 
