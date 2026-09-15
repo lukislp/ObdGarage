@@ -73,34 +73,55 @@ Important iOS limitations (Plan 2.1/8):
 - Device builds need an Apple developer account plus provisioning; distribution
   to testers goes through TestFlight (Phase 7).
 
-## 5. Extract the web UI into a shared Razor Class Library (ObdGarage.UI)
+## 5. How Web and MAUI share the UI (ObdGarage.UI)
 
-The pages in `src/ObdGarage.Web/Components` are already UI-thin (services instead of
-logic in the components) — which is why they can be moved step by step into an RCL
-shared by Web **and** MAUI:
+The Blazor UI lives in `src/ObdGarage.UI`, a Razor Class Library referenced by **both** hosts,
+so a page exists exactly once and the two never drift apart. `ObdGarage.Web/Components` only
+keeps the web-specific shell (`App.razor`, `Routes.razor`, the error page); `ObdGarage.App`
+keeps its MAUI shell (`MainPage.xaml`, `Components/Routes.razor`). A component added to the
+RCL shows up in the web app and in the mobile app at the same time, without touching a host.
 
-1. Create and reference the RCL:
-   ```bash
-   dotnet new razorclasslib -n ObdGarage.UI -o src/ObdGarage.UI
-   dotnet sln ObdGarage.slnx add src/ObdGarage.UI/ObdGarage.UI.csproj
-   dotnet add src/ObdGarage.UI reference src/ObdGarage.Core src/ObdGarage.Application src/ObdGarage.Obd src/ObdGarage.Shared
-   dotnet add src/ObdGarage.Web reference src/ObdGarage.UI
-   dotnet add src/ObdGarage.App reference src/ObdGarage.UI
-   ```
-2. Move the components: move pages/parts out of `ObdGarage.Web/Components` into
-   `src/ObdGarage.UI/`, adjust the namespaces to `ObdGarage.UI.…` and pull them into
-   both hosts with `@using ObdGarage.UI`. Do **not** take along
-   web-specific things like `App.razor`/`Routes.razor` (those stay in Web) — the MAUI app
-   gets its own `Routes.razor` with `<Router AppAssembly="typeof(ObdGarage.UI.…).Assembly">`.
-3. Service wiring stays per host: both register the same services
-   (see `ObdGarage.Web/Program.cs` vs. `ObdGarage.App/MauiProgram.cs`) — the
-   components only inject interfaces/services and never notice where they run.
-4. The RCL's static assets end up under `_content/ObdGarage.UI/…` — extend the paths in
-   `index.html` (MAUI) and `App.razor` (Web) accordingly.
-5. Solve differing behaviour (e.g. ConnectionManager with Bluetooth only in the
-   app) with additional services registered per host, not with `#if` in the UI.
-6. Afterwards, replace `Components/Main.razor` in ObdGarage.App with the real start page from
-   the RCL (switch the RootComponent in `MainPage.xaml`).
+What lives in the RCL:
+
+- `Pages/` — `Home`, `VehicleDetail`, `VehicleForm`, `Settings`, `NotFound`
+- `VehicleTabs/` — Dashboard, Diagnose, Fahrten, Kosten, Verlauf, Wartung
+- `Layout/MainLayout.razor` — the shared layout
+- `SvgChart.cs`, `Fmt.cs` — chart rendering and culture-independent formatting
+- `wwwroot/app.css` — all shared styling
+
+It references `ObdGarage.Core`, `.Application`, `.Obd` and `.Shared` only — no `ObdGarage.Data`,
+no host-specific packages — so the components inject interfaces and never learn where they run.
+
+**Routing is per host**, because the routable `@page` components sit in a different assembly
+than either host:
+
+- Web (`ObdGarage.Web/Components/Routes.razor`): `AppAssembly="typeof(Program).Assembly"` plus
+  `AdditionalAssemblies="new[] { typeof(ObdGarage.UI.Pages.Home).Assembly }"`. The same assembly
+  additionally has to be passed to `MapRazorComponents<App>().AddAdditionalAssemblies(…)` in
+  `Program.cs` — without that, ASP.NET Core's own routing middleware never learns the RCL's
+  pages exist and every route 404s before Blazor gets to render.
+- MAUI (`ObdGarage.App/Components/Routes.razor`): the RCL assembly *is* the `AppAssembly`;
+  `MainPage.xaml` mounts that `Routes` component as the `BlazorWebView`'s root component.
+
+**Static assets** of the RCL are served from `_content/ObdGarage.UI/…`: both
+`ObdGarage.Web/Components/App.razor` and `ObdGarage.App/wwwroot/index.html` link
+`_content/ObdGarage.UI/app.css`. `ObdGarage.Web` has no `wwwroot` of its own; the MAUI app adds
+only its host-specific `wwwroot/css/app.css` on top of the shared stylesheet.
+
+**Service wiring stays per host** — that is what lets the same components run unchanged on both:
+
+- `ObdGarage.Web/Program.cs`: data directory under the content root, `AppState` and `ISyncManager`
+  registered **scoped** (per Blazor Server circuit, so one browser tab's sync login cannot switch
+  another tab's identity), `SyncManager` persisting to `sync-auth.json`.
+- `ObdGarage.App/MauiProgram.cs`: data directory `FileSystem.AppDataDirectory`, `AppState` and
+  `ISyncManager` as **singletons** (one long-lived window, no tabs), and `SecureStorageSyncManager`
+  instead — sync credentials live in the platform's `SecureStorage`.
+- Shared between both: the EF Core/SQLite repositories, `IClock`, `PhotoStorage`,
+  `OdometerTracker`, `ConnectionManager`, migrations plus the JSON→SQLite import on startup.
+
+Platform-only behaviour (e.g. Bluetooth Classic, which exists on Android only) is handled the same
+way: an extra service registered by the host that has it, never a `#if` inside the UI project —
+`src/ObdGarage.UI` contains none.
 
 ## 6. Backend on the home network (sync)
 
@@ -112,9 +133,11 @@ shared by Web **and** MAUI:
   ```
   (or change `applicationUrl` in the launchSettings to `http://0.0.0.0:5235`
   and open the port in the machine's firewall).
-- In `src/ObdGarage.App/MauiProgram.cs`, set the `DefaultSyncBaseUrl` constant to the
-  server's home-network IP (e.g. `http://192.168.0.100:5235/`) — until a settings
-  page takes that over.
+- The address is no longer baked into the app: enter the server's home-network URL
+  (e.g. `http://192.168.0.100:5235`) once in the app's **Settings** page, next to the sync
+  login — it is persisted from then on (on the phone through `SecureStorageSyncManager`).
+  The placeholder shown there is `SyncService.DefaultServerUrl` (`http://localhost:5299`),
+  which only works when server and client run on the same machine.
 - Android emulator: the host machine is `10.0.2.2` there, not `192.168.x.x`.
 - On the road (Plan 8): Tailscale/WireGuard instead of an open port; as soon as the server
   leaves the home network, HTTPS only, and tokens in `SecureStorage`.
