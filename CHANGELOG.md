@@ -1,3 +1,10 @@
+## [1.3.9](https://github.com/lukislp/ObdGarage/compare/v1.3.8...v1.3.9) (2026-09-17)
+
+
+### Bug Fixes
+
+* **deps:** Bump the dotnet group with 1 update ([48d3da9](https://github.com/lukislp/ObdGarage/commit/48d3da95ec97fa152749f3381977e521e17943c5))
+
 ## [1.3.8](https://github.com/lukislp/ObdGarage/compare/v1.3.7...v1.3.8) (2026-09-12)
 
 
