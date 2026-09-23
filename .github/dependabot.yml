@@ -4,16 +4,17 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: daily
     commit-message:
       prefix: "fix(ci)"
     reviewers:
       - "lukislp"
+    open-pull-requests-limit: 2
   - package-ecosystem: nuget
     directory: /
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: daily
+    open-pull-requests-limit: 2
     groups:
       dotnet:
         patterns: ["Microsoft.*", "System.*", "Npgsql.*"]
@@ -30,7 +31,7 @@ updates:
   - package-ecosystem: docker
     directory: /docker
     schedule:
-      interval: weekly
+      interval: daily
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
@@ -38,3 +39,4 @@ updates:
       prefix: "fix(docker)"
     reviewers:
       - "lukislp"
+    open-pull-requests-limit: 2
