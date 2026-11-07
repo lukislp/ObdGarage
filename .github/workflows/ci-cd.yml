@@ -188,7 +188,7 @@ jobs:
       app-id: ${{ secrets.LKTEC_BOT_APP_ID }}
       private-key: ${{ secrets.LKTEC_BOT_PRIVATE_KEY }}
   # One native runner per platform instead of a single QEMU-emulated multi-platform build -
-  # ubuntu-24.04-arm is a real arm64 GitHub-hosted runner (free for public repos), so that leg
+  # ubuntu-26.04-arm is a real arm64 GitHub-hosted runner (free for public repos), so that leg
   # runs at native speed (same pattern as lukislp/studylife). Each leg pushes by digest only;
   # docker-manifest-merge below writes the actual :latest/:<version> tags, and only after Trivy
   # passed on the amd64 image. Runs after the release job (not before): a build failure here
@@ -207,7 +207,7 @@ jobs:
             runner: ubuntu-latest
           - arch: arm64
             platform: linux/arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
           - image: server
             registry_image: ghcr.io/lukislp/obdgarage-server
             dockerfile: docker/server.Dockerfile
