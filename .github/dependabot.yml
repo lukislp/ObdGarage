@@ -57,6 +57,8 @@ updates:
         versions: ["11.*"]
       - dependency-name: "Npgsql.EntityFrameworkCore.PostgreSQL"
         versions: ["11.*"]
+      - dependency-name: "Microsoft.SourceLink.*"
+        versions: ["11.*"]
     commit-message:
       prefix: "fix(deps)"
   # docker/server.Dockerfile and docker/web.Dockerfile: base-image digest bumps arrive as PRs like
